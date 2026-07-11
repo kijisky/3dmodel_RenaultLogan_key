@@ -1,0 +1,4 @@
+# Parametric key model + preview renders
+cadquery>=2.8      # B-rep CAD kernel (OpenCASCADE) — builds the model, exports STL/STEP
+numpy-stl>=3.0     # STL loading for the preview/verification renders
+matplotlib>=3.8    # preview PNG renders (docs/renders)

@@ -88,17 +88,26 @@ one([(f"{EXPORT}/bottom_shell.stl", RED, 1.0, 0.0),
     "assembly_open.png", elev=24, azim=-62, title="Exploded view")
 os.remove(tmp_top)
 
-# fit-check: bottom shell + reference blade (steel) + chip (dark) in place
+# fit-check: bottom shell + reference blade + fob + chip in place
 tmp_blade = os.path.join(EXPORT, "_tmp_blade.stl")
 tmp_chip = os.path.join(EXPORT, "_tmp_chip.stl")
+tmp_fob = os.path.join(EXPORT, "_tmp_fob.stl")
 cq.exporters.export(kly.blade_reference(kly.P), tmp_blade, tolerance=0.05, angularTolerance=0.3)
 cq.exporters.export(kly.chip_reference(kly.P), tmp_chip, tolerance=0.05, angularTolerance=0.3)
-one([(f"{EXPORT}/bottom_shell.stl", RED, 0.55, 0.0),
+cq.exporters.export(kly.fob_reference(kly.P), tmp_fob, tolerance=0.05, angularTolerance=0.3)
+one([(f"{EXPORT}/bottom_shell.stl", RED, 0.45, 0.0),
      (tmp_blade, "#8a8f98", 1.0, 0.0),
-     (tmp_chip, "#2b2f36", 1.0, 0.0)],
-    "fit_check.png", elev=30, azim=-64,
-    title="Fit check — blade tang inserted, PCF7936 in its nest")
-os.remove(tmp_blade)
-os.remove(tmp_chip)
+     (tmp_chip, "#2b2f36", 1.0, 0.0),
+     (tmp_fob, "#1f6f3a", 0.9, 0.0)],
+    "fit_check.png", elev=32, azim=-60,
+    title="Fit check — blade + PCF7936 + alarm fob (green) with buttons")
+
+# top-down: button holes over the fob buttons
+one([(f"{EXPORT}/bottom_shell.stl", RED, 0.30, 0.0),
+     (tmp_fob, "#1f6f3a", 1.0, 0.0)],
+    "fob_buttons.png", elev=88, azim=-90,
+    title="Fob seated — 3 buttons line up under the top-half holes")
+for f in (tmp_blade, tmp_chip, tmp_fob):
+    os.remove(f)
 
 print("done.")

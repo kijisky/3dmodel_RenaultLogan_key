@@ -105,12 +105,15 @@ class KeyParams:
     button_hole_dia: float = 5.0
     button_positions: tuple = ((-6.0, 0.0), (7.0, 7.0), (7.0, -7.0))
 
-    # --- Immobilizer transponder PCF7936 ("ID46") carrier, by the blade ----
-    chip_length: float = 16.0
-    chip_width: float = 7.0
-    chip_thickness: float = 3.0
-    chip_center_x: float = 10.0
-    chip_center_y: float = 9.0   # offset to the side of the blade dock
+    # --- Immobilizer transponder PCF7936 ("ID46") carrier, by the blade.
+    # Sits in an OPEN nest beside the blade (open at the parting plane) so you
+    # drop it in with the shell open. Default is a small flat carrier; set your
+    # real size — a bigger chip needs the nest moved or the head lengthened. ---
+    chip_length: float = 13.0
+    chip_width: float = 6.0
+    chip_thickness: float = 2.5
+    chip_center_x: float = 9.0
+    chip_center_y: float = 9.5   # offset to the side of the blade slot
     chip_across: bool = False    # False -> long axis along X (along the key)
 
     # --- Keyring (front corner, by the blade — no room behind the fob) -----
@@ -144,6 +147,13 @@ class KeyParams:
     def blade_z0(self):
         """Underside of the tang slot (tang rides high in the bottom half)."""
         return self.split_z - (self.blade_thickness + self.clearance) - self.blade_top_gap
+
+    @property
+    def chip_floor(self):
+        """Floor of the chip nest. The nest is OPEN at the parting plane so the
+        chip drops in from above while the shell is open, then the closed lid
+        caps it — so the floor sits chip_thickness (+a little) below the split."""
+        return max(self.split_z - self.chip_thickness - 0.6, self.wall + 0.3)
 
 
 P = KeyParams()
@@ -207,13 +217,15 @@ def blade_channel(p: KeyParams):
 
 
 def chip_pocket(p: KeyParams):
-    """Rectangular pocket for the PCF7936 carrier, cut into the solid front."""
+    """Open-topped nest for the PCF7936 carrier, cut into the solid front and
+    OPEN at the parting plane so you can drop the chip in with the shell open."""
     if p.chip_across:
         dx, dy = p.chip_width + p.clearance, p.chip_length + p.clearance
     else:
         dx, dy = p.chip_length + p.clearance, p.chip_width + p.clearance
-    depth = p.chip_thickness + 0.6
-    return box_at(dx, dy, depth + EPS, p.chip_center_x, p.chip_center_y, p.wall)
+    z0 = p.chip_floor
+    height = p.split_z - z0 + EPS          # cut up through the parting face
+    return box_at(dx, dy, height, p.chip_center_x, p.chip_center_y, z0)
 
 
 # ============================================================================
@@ -312,7 +324,7 @@ def chip_reference(p: KeyParams):
         dx, dy = p.chip_width, p.chip_length
     else:
         dx, dy = p.chip_length, p.chip_width
-    return box_at(dx, dy, p.chip_thickness, p.chip_center_x, p.chip_center_y, p.wall)
+    return box_at(dx, dy, p.chip_thickness, p.chip_center_x, p.chip_center_y, p.chip_floor)
 
 
 def fob_reference(p: KeyParams):

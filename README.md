@@ -32,7 +32,9 @@ Head envelope ≈ **50 × 34 × 12 mm** (auto-sized around the fob).
    lives in the bottom half, so the blade is retained even with the top removed.
 
 3. **Immobilizer** — the **PCF7936 / "ID46"** transponder sits in a small
-   rectangular **nest** in the solid front, right next to the blade.
+   **open-topped nest** in the solid front, right next to the blade. The nest is
+   open at the parting plane, so with the shell open you just drop the chip in
+   from above; the closed lid caps it.
 
 4. Keyring hole in the front corner by the blade (there is no room behind the
    fob), two back-corner assembly screws, and an alignment lip/groove around the

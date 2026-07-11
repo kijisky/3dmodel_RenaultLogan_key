@@ -67,7 +67,7 @@ one([(f"{EXPORT}/key_assembled.stl", RED, 1.0, 0.0)],
 
 one([(f"{EXPORT}/bottom_shell.stl", RED, 1.0, 0.0)],
     "bottom_shell.png", elev=42, azim=-72,
-    title="Bottom half — blade channel, bolt boss, chip nest")
+    title="Bottom half — fob cavity, blade slot, open chip nest")
 
 one([(f"{EXPORT}/top_shell.stl", GRY, 1.0, 0.0)],
     "top_shell.png", elev=42, azim=-72, title="Top half (lid)")

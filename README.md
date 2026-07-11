@@ -13,7 +13,8 @@ print-ready STLs.
 > The gray blade, dark chip and green fob in the *fit-check* views are
 > **reference geometry only** — they are not part of any printed STL.
 
-Head envelope ≈ **50 × 34 × 12 mm** (auto-sized around the fob).
+Head envelope ≈ **54 × 34 × 12 mm** (auto-sized around the fob), plus a keyring
+eyelet that brings the overall length to ≈ **60 mm**.
 
 ## What it holds
 
@@ -24,21 +25,22 @@ Head envelope ≈ **50 × 34 × 12 mm** (auto-sized around the fob).
    through). Insert the fob with the shell open, then close the lid.
 
 2. **Blade inserts from the front, like the OEM key, and holds without the
-   second half.** The flat metal **tang** slides into a closed slot in the solid
-   front of the **bottom** half; the wider **shoulder** butts the front face as
-   the depth stop. Floor + a thin **cap** + side walls + a **back stop** capture
-   the tang on every axis except pull-out; a **bolt** through the tang's factory
-   hole locks that last axis (and clamps the two halves at the front). All of it
-   lives in the bottom half, so the blade is retained even with the top removed.
+   second half.** The flat metal **tang** slides into a slot in the solid front
+   of the **bottom** half; the wider **shoulder** butts the front face as the
+   depth stop. Floor + a thin **cap** + side walls capture the tang, and a
+   **bolt** through the tang's factory hole locks pull-out (and clamps the two
+   halves at the front). The slot runs **through into the fob cavity** (10 mm
+   wide), so it is a passage — print supports push straight out into the
+   interior instead of being trapped in a blind pocket.
 
 3. **Immobilizer** — the **PCF7936 / "ID46"** transponder sits in a small
    **open-topped nest** in the solid front, right next to the blade. The nest is
    open at the parting plane, so with the shell open you just drop the chip in
    from above; the closed lid caps it.
 
-4. Keyring hole in the front corner by the blade (there is no room behind the
-   fob), two back-corner assembly screws, and an alignment lip/groove around the
-   parting line.
+4. **Keyring eyelet** — a rounded loop sticks out of the back (anchored in the
+   solid block behind the fob) with a hole for a split ring. Two back-corner
+   assembly screws and an alignment lip/groove close the clamshell.
 
 Because the enlarged front of the head is solid, the blade dock / chip nest /
 keyring / bolt are just pockets cut into it — no separate printed bosses.
@@ -61,13 +63,13 @@ edges, 0 non-manifold junctions) and print **flat-side down with no supports**.
 ## How the blade is held (cross-sections)
 
 ```
- side view (Y=0)                     top view (blade height)
- +--------- cap ----------+          front face
- |####  +- tang slot -+ ##|           |  +-- narrow tang slot --+  back
- |####  |   BLADE ----+--)|  shoulder -+<-|  (= tang width)      |# stop
- |#### bolt  +--------+ ##|  (outside) |  +----------------------+
- |####  # boss/thread # ##|           bolt hole (o)  through the tang
- +-- floor ---------------+
+ side view (Y=0)                       top view (blade height)
+ +--------- cap -----------+           front face
+ |####  +- tang slot ------|--> into    |  +- 10 mm slot ---------|--> fob
+ |####  |   BLADE ---->    | fob cavity  |  |  (through)          | cavity
+ |#### bolt  +------------ |             |  +--------------------- |
+ |####  # solid / thread # |  shoulder --+<-- butts the front face (depth stop)
+ +-- floor ----------------+           bolt hole (o)  through the tang
 ```
 
 Front insertion: the tang slides in until the **shoulder hits the front

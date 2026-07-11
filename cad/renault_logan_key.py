@@ -65,8 +65,8 @@ class KeyParams:
     # Sized to hold the fob: width = fob_width + 2*fob_clearance + 2*wall;
     # length = solid front zone + fob + back wall; height = wall + fob_body +
     # gap + wall (the fob body is 7 mm; its 3 mm buttons poke out the top).
-    head_length: float = 54.0    # front (blade side) -> back (extra rear length
-    #   leaves a solid block behind the fob to anchor the keyring eyelet)
+    head_length: float = 58.0    # front (blade side) -> back. The rear part is
+    #   extra solid body beyond the fob; the keyring hole goes through it.
     head_width: float = 34.0
     head_height: float = 12.0    # total assembled thickness
     corner_radius: float = 8.0
@@ -119,12 +119,11 @@ class KeyParams:
     chip_center_y: float = 9.5   # offset to the side of the blade slot
     chip_across: bool = False    # False -> long axis along X (along the key)
 
-    # --- Keyring eyelet: a rounded loop that sticks out of the BACK, anchored
-    # in the solid block behind the fob. A ring passes through its Z hole. -----
-    eyelet: bool = True
-    eyelet_width: float = 12.0       # loop diameter
-    eyelet_protrude: float = 6.0     # how far it sticks out past the back
-    eyelet_hole_dia: float = 5.5     # the ring hole
+    # --- Keyring hole: a plain Z hole through the extra solid body behind the
+    # fob (no protruding loop — the body is simply longer). -------------------
+    keyring_hole_dia: float = 6.0
+    keyring_x: float = 53.0          # from the front face (sits in the rear body)
+    keyring_y: float = 0.0
 
     # --- Assembly screws: 2 at the back corners; the blade bolt clamps the
     # front. Sized for M2.5 self-tapping screws. ----------------------------
@@ -132,7 +131,7 @@ class KeyParams:
     asm_clear_dia: float = 2.7
     asm_head_dia: float = 5.0
     asm_head_depth: float = 2.0
-    asm_positions: tuple = ((48.0, 13.0), (48.0, -13.0))
+    asm_positions: tuple = ((51.0, 13.0), (51.0, -13.0))
 
     # --- Parting-line alignment lip --------------------------------------
     lip_width: float = 1.0
@@ -152,11 +151,6 @@ class KeyParams:
     def blade_z0(self):
         """Underside of the tang slot (tang rides high in the bottom half)."""
         return self.split_z - (self.blade_thickness + self.clearance) - self.blade_top_gap
-
-    @property
-    def eyelet_cx(self):
-        """X of the eyelet loop centre (mostly past the back face)."""
-        return self.head_length + self.eyelet_protrude - self.eyelet_width / 2
 
     @property
     def chip_floor(self):
@@ -256,13 +250,6 @@ def lip_ring(p: KeyParams, height, grow=0.0):
     return rrect_ring(outer_len, outer_wid, height, rad, w)
 
 
-def eyelet_lug(p: KeyParams, height):
-    """Rounded keyring loop protruding from the back, for a shell of `height`.
-    Its inner half sits inside the solid rear block (behind the fob); its outer
-    half sticks out past the back face. The caller cuts the ring hole."""
-    return cyl(p.eyelet_width, p.eyelet_cx, 0, 0, height)
-
-
 # ============================================================================
 # Shell halves
 # ============================================================================
@@ -283,14 +270,11 @@ def bottom_shell(p: KeyParams):
         .translate((cx, 0, 0))
     )
 
-    # keyring eyelet protruding from the back (added after the trim above)
-    if p.eyelet:
-        b = b.union(eyelet_lug(p, p.split_z))
-        b = b.cut(cyl(p.eyelet_hole_dia, p.eyelet_cx, 0, -EPS, p.split_z + 2 * EPS))
-
     # --- pockets / holes in the solid front ---
     b = b.cut(blade_channel(p))
     b = b.cut(chip_pocket(p))
+    # keyring hole through the extra rear body
+    b = b.cut(cyl(p.keyring_hole_dia, p.keyring_x, p.keyring_y, -EPS, p.split_z + 2 * EPS))
 
     # self-tap pilots, blind from the parting face (closed outer floor)
     floor_keep = 1.0
@@ -313,10 +297,8 @@ def top_shell(p: KeyParams):
     groove = lip_ring(p, p.lip_height + p.clearance, grow=p.clearance).translate((cx, 0, 0))
     t = t.cut(groove)
 
-    # keyring eyelet (matching half of the loop) + ring hole
-    if p.eyelet:
-        t = t.union(eyelet_lug(p, h))
-        t = t.cut(cyl(p.eyelet_hole_dia, p.eyelet_cx, 0, -EPS, h + 2 * EPS))
+    # keyring hole through the extra rear body
+    t = t.cut(cyl(p.keyring_hole_dia, p.keyring_x, p.keyring_y, -EPS, h + 2 * EPS))
 
     # button holes through the ceiling, over each fob button
     for (bx, by) in p.button_positions:

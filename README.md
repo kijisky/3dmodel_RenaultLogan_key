@@ -13,8 +13,8 @@ print-ready STLs.
 > The gray blade, dark chip and green fob in the *fit-check* views are
 > **reference geometry only** — they are not part of any printed STL.
 
-Head envelope ≈ **54 × 34 × 12 mm** (auto-sized around the fob), plus a keyring
-eyelet that brings the overall length to ≈ **60 mm**.
+Head envelope ≈ **58 × 34 × 12 mm** (auto-sized around the fob, with extra rear
+body for the keyring hole).
 
 ## What it holds
 
@@ -38,9 +38,9 @@ eyelet that brings the overall length to ≈ **60 mm**.
    open at the parting plane, so with the shell open you just drop the chip in
    from above; the closed lid caps it.
 
-4. **Keyring eyelet** — a rounded loop sticks out of the back (anchored in the
-   solid block behind the fob) with a hole for a split ring. Two back-corner
-   assembly screws and an alignment lip/groove close the clamshell.
+4. **Keyring hole** — a plain hole through the extra solid body behind the fob
+   (the body is simply longer; no protruding loop). Two back-corner assembly
+   screws and an alignment lip/groove close the clamshell.
 
 Because the enlarged front of the head is solid, the blade dock / chip nest /
 keyring / bolt are just pockets cut into it — no separate printed bosses.

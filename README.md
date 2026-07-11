@@ -20,9 +20,10 @@ body for the keyring hole).
 
 1. **Alarm-remote fob** — a round PCB **31.5 × 28 mm, ~7 mm thick, 3 buttons on
    one face** — drops into a rounded **cavity** that fills the middle and rear
-   of the head. Three **button holes** through the **top** half sit over the
-   buttons so they can be pressed with the lid closed (the 3 mm buttons poke
-   through). Insert the fob with the shell open, then close the lid.
+   of the head. **Retainer ribs** on the cavity walls grip its edge so it can't
+   rattle or spin. Three **rectangular button openings** through the **top** half
+   sit over the buttons — the caps drop into them and are pressed with the lid
+   closed. Insert the fob with the shell open, then close the lid.
 
 2. **Blade inserts from the front, like the OEM key, and holds without the
    second half.** The flat metal **tang** slides into a slot in the solid front
@@ -34,9 +35,10 @@ body for the keyring hole).
    interior instead of being trapped in a blind pocket.
 
 3. **Immobilizer** — the **PCF7936 / "ID46"** transponder sits in a small
-   **open-topped nest** in the solid front, right next to the blade. The nest is
-   open at the parting plane, so with the shell open you just drop the chip in
-   from above; the closed lid caps it.
+   **open-topped nest** in the solid front, right next to the blade: walled on
+   all four sides, open only at the parting plane so you drop it in with the
+   shell open. A **hold-down pad on the lid** then presses on it, so once the key
+   is closed the chip is trapped and **cannot fall out**.
 
 4. **Keyring hole** — a plain hole through the extra solid body behind the fob
    (the body is simply longer; no protruding loop). Two back-corner assembly
@@ -104,7 +106,7 @@ parts and update the `KeyParams` block at the top of
 fob_length, fob_width, fob_body_thickness    # your alarm fob PCB (31.5 x 28 x 7)
 fob_button_height                            # how far the buttons stand proud
 button_positions                             # (x, y) of each button in FOB-LOCAL mm
-button_hole_dia                              # hole over each button  << CHECK THESE
+button_slot_l, button_slot_w                 # rectangular opening size  << CHECK THESE
 blade_width, blade_thickness, blade_insert   # the tang that enters the head
 shoulder_width, shoulder_length              # the external stop (width > blade_width)
 bolt_offset                                  # must line up with the hole in YOUR tang

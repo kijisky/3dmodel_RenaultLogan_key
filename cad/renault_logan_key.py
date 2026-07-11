@@ -99,25 +99,35 @@ class KeyParams:
     fob_body_thickness: float = 7.0   # PCB + battery holder, WITHOUT buttons
     fob_button_height: float = 3.0    # buttons stand this proud of the body
     fob_corner_r: float = 13.0   # the board is nearly round; big radius
-    fob_clearance: float = 0.5   # gap around the fob in its cavity
+    fob_clearance: float = 0.4   # gap around the fob in its cavity
     fob_center_x: float = 31.5   # cavity centre from the front face
+    # Retainer ribs (small crush ribs on the cavity wall) grip the fob edge so
+    # it can't rattle or spin. `grip` is the interference past the fob edge.
+    fob_retain: bool = True
+    fob_retainer_dia: float = 1.6
+    fob_retainer_grip: float = 0.2
 
-    # --- Fob buttons: 3 buttons on ONE face -> holes through the TOP half.
-    # Positions are (x, y) in FOB-LOCAL mm (x along fob_length toward the back,
-    # y across). MEASURE THESE against your board and adjust. -----------------
-    button_hole_dia: float = 5.0
+    # --- Fob buttons: 3 buttons on ONE face -> RECTANGULAR openings through the
+    # TOP half that the button caps drop into. Positions are (x, y) in FOB-LOCAL
+    # mm (x along fob_length toward the back, y across). MEASURE against your
+    # board. The opening is generous so a small position error still clears. ---
+    button_slot_l: float = 6.0   # opening size along X
+    button_slot_w: float = 6.0   # opening size along Y
+    button_slot_r: float = 1.2   # corner radius of the opening
     button_positions: tuple = ((-6.0, 0.0), (7.0, 7.0), (7.0, -7.0))
 
     # --- Immobilizer transponder PCF7936 ("ID46") carrier, by the blade.
-    # Sits in an OPEN nest beside the blade (open at the parting plane) so you
-    # drop it in with the shell open. Default is a small flat carrier; set your
-    # real size — a bigger chip needs the nest moved or the head lengthened. ---
-    chip_length: float = 13.0
+    # Fully-walled OPEN nest beside the blade (open only at the parting plane so
+    # you drop it in with the shell open); a hold-down pad on the lid then traps
+    # it so it CANNOT fall out once closed. Default is a small flat carrier. ----
+    chip_length: float = 12.0
     chip_width: float = 6.0
     chip_thickness: float = 2.5
-    chip_center_x: float = 9.0
-    chip_center_y: float = 9.5   # offset to the side of the blade slot
-    chip_across: bool = False    # False -> long axis along X (along the key)
+    chip_center_x: float = 9.5    # positioned to leave a real wall front & back
+    chip_center_y: float = 9.5    # offset to the side of the blade slot
+    chip_across: bool = False     # False -> long axis along X (along the key)
+    chip_holddown: bool = True    # pad on the lid that traps the chip
+    chip_holddown_gap: float = 0.1
 
     # --- Keyring hole: a plain Z hole through the extra solid body behind the
     # fob (no protruding loop — the body is simply longer). -------------------
@@ -238,6 +248,38 @@ def chip_pocket(p: KeyParams):
     return box_at(dx, dy, height, p.chip_center_x, p.chip_center_y, z0)
 
 
+def chip_holddown_pad(p: KeyParams):
+    """A pad on the LID (top half) that reaches down into the open chip nest and
+    traps the chip so it cannot fall out once the key is closed. Returned in the
+    top half's LOCAL frame (z=0 is the parting face), protruding below it."""
+    chip_top = p.chip_floor + p.chip_thickness
+    depth = p.split_z - chip_top - p.chip_holddown_gap
+    if depth <= 0:
+        return None
+    return box_at(p.chip_length - 1.0, p.chip_width - 1.0, depth + EPS,
+                  p.chip_center_x, p.chip_center_y, -depth)
+
+
+def fob_retainers(p: KeyParams):
+    """Small crush ribs standing on the cavity wall that grip the fob edge so it
+    can't rattle or spin. Added into the bottom half, floor to parting."""
+    ribs = None
+    g = p.fob_retainer_grip
+    rib_len = 3.0                              # rib length along the wall (X)
+    inner = p.fob_width / 2 - g                # protrudes `grip` past the fob edge
+    outer = p.fob_width / 2 + p.fob_clearance + 1.0   # buried in the wall
+    cy_pos = (inner + outer) / 2
+    dy = outer - inner
+    # three box ribs along each long (Y) side — axis-aligned faces union cleanly;
+    # kept off the front end so they never meet the blade slot
+    for dx in (-10, 0, 10):
+        for sy in (1, -1):
+            r = box_at(rib_len, dy, p.split_z - p.wall + EPS,
+                       p.fob_center_x + dx, sy * cy_pos, p.wall)
+            ribs = r if ribs is None else ribs.union(r)
+    return ribs
+
+
 # ============================================================================
 # Alignment lip / groove
 # ============================================================================
@@ -260,6 +302,10 @@ def bottom_shell(p: KeyParams):
 
     # hollow the fob region only (front stays solid for blade/chip/keyring/bolt)
     b = b.cut(fob_cavity(p, p.wall, p.split_z))          # open at the parting face
+
+    # retainer ribs that grip the fob so it can't rattle or spin
+    if p.fob_retain:
+        b = b.union(fob_retainers(p))
 
     # alignment lip on the parting rim
     skirt = 0.6
@@ -300,9 +346,17 @@ def top_shell(p: KeyParams):
     # keyring hole through the extra rear body
     t = t.cut(cyl(p.keyring_hole_dia, p.keyring_x, p.keyring_y, -EPS, h + 2 * EPS))
 
-    # button holes through the ceiling, over each fob button
+    # rectangular button openings through the ceiling (the caps drop into them)
     for (bx, by) in p.button_positions:
-        t = t.cut(cyl(p.button_hole_dia, p.fob_center_x + bx, by, -EPS, h + 2 * EPS))
+        slot = rrect_solid(p.button_slot_l, p.button_slot_w, h + 2 * EPS, p.button_slot_r)\
+            .translate((p.fob_center_x + bx, by, -EPS))
+        t = t.cut(slot)
+
+    # hold-down pad that traps the chip against its nest when the lid closes
+    if p.chip_holddown:
+        pad = chip_holddown_pad(p)
+        if pad is not None:
+            t = t.union(pad)
 
     # assembly screws: clearance + counterbore from the top outer face
     for (x, y) in p.asm_positions:
@@ -344,8 +398,8 @@ def fob_reference(p: KeyParams):
         .translate((p.fob_center_x, 0, p.wall))
     fob = body
     for (bx, by) in p.button_positions:
-        btn = cyl(p.button_hole_dia - 1.2, p.fob_center_x + bx, by,
-                  p.wall + p.fob_body_thickness, p.fob_button_height)
+        btn = box_at(p.button_slot_l - 1.5, p.button_slot_w - 1.5, p.fob_button_height,
+                     p.fob_center_x + bx, by, p.wall + p.fob_body_thickness)
         fob = fob.union(btn)
     return fob
 

@@ -105,10 +105,14 @@ class KeyParams:
     fob_corner_r: float = 13.0   # the board is nearly round; big radius
     fob_clearance: float = 0.4   # gap around the fob in its cavity
     fob_center_x: float = 31.5   # cavity centre from the front face
-    # Retainer ribs (small crush ribs on the cavity wall) grip the fob edge so
-    # it can't rattle or spin. `grip` is the interference past the fob edge.
+    # Retainer ribs: ONE small crush rib per long (Y) cavity wall, gripping the
+    # fob edge so it can't rattle or spin. Positioned `fob_retainer_dx` from the
+    # fob centre along X (+ = toward the back/fob hole, away from the blade);
+    # `fob_retainer_thickness` is the rib's length along the wall; `grip` is
+    # the interference past the fob edge.
     fob_retain: bool = True
-    fob_retainer_dia: float = 1.6
+    fob_retainer_thickness: float = 1.0
+    fob_retainer_dx: float = 3.0
     fob_retainer_grip: float = 0.2
 
     # --- Fob buttons: 3 buttons on ONE face -> RECTANGULAR openings through the
@@ -150,7 +154,7 @@ class KeyParams:
     # fob (no protruding loop — the body is simply longer). -------------------
     keyring_hole_dia: float = 6.0
     keyring_x: float = 53.0          # from the front face (sits in the rear body)
-    keyring_y: float = 0.0
+    keyring_y: float = 8.0           # off-centre, toward one edge (was 0 = centred)
 
     # --- Assembly screws: 2 at the back corners; the blade bolt clamps the
     # front. Sized for M2.5 self-tapping screws. ----------------------------
@@ -327,22 +331,19 @@ def chip_holddown_pad(p: KeyParams):
 
 
 def fob_retainers(p: KeyParams):
-    """Small crush ribs standing on the cavity wall that grip the fob edge so it
-    can't rattle or spin. Added into the bottom half, floor to parting."""
-    ribs = None
+    """One small crush rib per long (Y) cavity wall, gripping the fob edge so
+    it can't rattle or spin. Added into the bottom half, floor to parting."""
     g = p.fob_retainer_grip
-    rib_len = 3.0                              # rib length along the wall (X)
-    inner = p.fob_width / 2 - g                # protrudes `grip` past the fob edge
+    rib_len = p.fob_retainer_thickness          # rib length along the wall (X)
+    inner = p.fob_width / 2 - g                 # protrudes `grip` past the fob edge
     outer = p.fob_width / 2 + p.fob_clearance + 1.0   # buried in the wall
     cy_pos = (inner + outer) / 2
     dy = outer - inner
-    # three box ribs along each long (Y) side — axis-aligned faces union cleanly;
-    # kept off the front end so they never meet the blade slot
-    for dx in (-10, 0, 10):
-        for sy in (1, -1):
-            r = box_at(rib_len, dy, p.split_z - p.wall + EPS,
-                       p.fob_center_x + dx, sy * cy_pos, p.wall)
-            ribs = r if ribs is None else ribs.union(r)
+    rib_x = p.fob_center_x + p.fob_retainer_dx
+    ribs = None
+    for sy in (1, -1):
+        r = box_at(rib_len, dy, p.split_z - p.wall + EPS, rib_x, sy * cy_pos, p.wall)
+        ribs = r if ribs is None else ribs.union(r)
     return ribs
 
 

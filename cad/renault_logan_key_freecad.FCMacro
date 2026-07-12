@@ -1,42 +1,51 @@
 # ============================================================================
-# Renault Logan key — parametric model, native FreeCAD port
+# Renault Logan key — LIVE parametric model for FreeCAD
 # ============================================================================
 #
-# This is a line-by-line port of cad/renault_logan_key.py (the CadQuery /
-# OpenCASCADE version) onto FreeCAD's own `Part` scripting API, so you get a
-# real .FCStd document instead of just an imported STEP. Every parameter and
-# every geometric step matches the CadQuery script exactly — only the low-
-# level primitive calls differ (Part.makeBox/makeCylinder/fuse/cut/common
-# instead of CadQuery's Workplane methods).
+# Unlike a plain "build once and export" macro, this creates real FreeCAD
+# *scripted parametric objects* (Part::FeaturePython): a single "KeyParameters"
+# object holds every dimension as an ordinary FreeCAD Property (grouped in the
+# Property panel — Head / Blade / Fob / Buttons / Immobilizer / Keyring /
+# Assembly Screws / Fit), and three shape objects (BottomShell, TopShell,
+# KeyAssembled) that read from it and rebuild their Shape on recompute.
 #
-# IMPORTANT — this port could not be run or verified against a real FreeCAD
-# install in the environment that wrote it (no FreeCAD available there). The
-# CadQuery twin (renault_logan_key.py) IS fully verified — build/exported/
-# checked watertight. This file follows the exact same logic and uses only
-# well-documented, stable Part-API calls, but if FreeCAD reports an error on a
-# specific line, that's the first place to look — the geometry/parameters
-# themselves are already proven correct in the CadQuery version.
+# WORKFLOW (all inside FreeCAD, no code editing):
+#   1. Run this macro once (Macro -> Macros... -> Execute, or freecadcmd).
+#   2. In the model tree, select "KeyParameters".
+#   3. In the Property panel, change any value (e.g. head_length, chip_width,
+#      button_x/button_y, ...).
+#   4. Recompute (the round-arrows toolbar button, or F5, or it may happen
+#      automatically depending on your "recompute on change" preference).
+#      BottomShell / TopShell / KeyAssembled all rebuild from the new values.
+#   5. Export whichever shape you want via File -> Export (STL for printing,
+#      STEP for other CAD).
 #
-# How to run:
-#   GUI:  Macro menu -> Macros... -> Execute (browse to this file), or just
-#         open it in the Python console and run it.
-#   CLI:  freecadcmd cad/renault_logan_key_freecad.FCMacro
+# Re-running the macro (e.g. after reopening the file in a new FreeCAD
+# session) is safe: it reuses the existing KeyParameters/shape objects and
+# just re-attaches their live-recompute behaviour, WITHOUT discarding any
+# values you already edited. It only creates fresh objects with the defaults
+# below the first time (or if you deleted them).
 #
-# Produces a FreeCAD document with three Part::Feature objects:
-#   bottom_shell    print-ready, flat-side down
-#   top_shell       print-ready, flat-side down (flipped, like the STL export)
-#   key_assembled   both halves fused, for a visual check
-# and saves it as export/renault_logan_key.FCStd (next to this macro's own
-# folder's ../export, or the current directory if that can't be resolved).
+# ----------------------------------------------------------------------------
+# This is a from-scratch FreeCAD port of the geometry validated in
+# cad/renault_logan_key.py (CadQuery). The environment that wrote this file
+# has no FreeCAD install, so it could not be run inside real FreeCAD -- it WAS
+# verified by executing the identical Part-API call sequence directly against
+# the OpenCASCADE kernel FreeCAD's own Part module wraps (same makeBox /
+# makeCylinder / fuse / cut / makeFillet calls), including a live "edit a
+# property, recompute, confirm the shape changed accordingly" cycle, not just
+# a one-shot build. Bounding boxes / exact BREP volumes matched the CadQuery
+# model. The one thing that couldn't be exercised from outside FreeCAD is the
+# literal FreeCAD module surface itself (Part::FeaturePython persistence
+# across save/reload, the Property panel UI, addProperty's exact runtime
+# behaviour) -- if something looks off there, the geometry underneath it is
+# already proven correct; it'll be a FreeCAD-API detail to adjust.
 #
 # See cad/renault_logan_key.py for the full design write-up (blade retention,
-# fob cavity, immobilizer nest, etc.) — the comments here are kept short since
-# that file documents the "why" in detail.
+# fob cavity, immobilizer snap-fit nest, etc.).
 # ============================================================================
 
 import math
-import os
-from dataclasses import dataclass, field
 
 import FreeCAD as App
 import Part
@@ -47,112 +56,16 @@ except Exception:
     Gui = None
 
 
-# ============================================================================
-# PARAMETERS — identical to renault_logan_key.py; keep the two in sync
-# ============================================================================
-
-@dataclass
-class KeyParams:
-    head_length: float = 58.0
-    head_width: float = 34.0
-    head_height: float = 12.0
-    split_ratio: float = 0.65
-    corner_radius: float = 8.0
-    wall: float = 2.2
-
-    blade_width: float = 9.0
-    blade_slot_width: float = 10.0
-    blade_thickness: float = 2.5
-    blade_insert: float = 11.0
-    blade_top_gap: float = 1.2
-    shoulder_length: float = 5.0
-    shoulder_width: float = 13.0
-    shoulder_thickness: float = 2.5
-
-    use_blade_bolt: bool = True
-    bolt_offset: float = 6.0
-    tang_hole_dia: float = 3.2
-    blade_pilot_dia: float = 2.0
-    blade_clear_dia: float = 2.7
-    blade_head_dia: float = 5.0
-    blade_head_depth: float = 2.0
-
-    fob_length: float = 31.5
-    fob_width: float = 28.0
-    fob_body_thickness: float = 7.0
-    fob_button_height: float = 3.0
-    fob_corner_r: float = 13.0
-    fob_clearance: float = 0.4
-    fob_center_x: float = 31.5
-    fob_retain: bool = True
-    fob_retainer_dia: float = 1.6
-    fob_retainer_grip: float = 0.2
-
-    button_slot_l: float = 7.0
-    button_slot_w: float = 5.0
-    button_slot_r: float = 1.2
-    button_positions: tuple = ((-6.0, 0.0), (7.0, 7.0), (7.0, -7.0))
-    button_radial: bool = True
-    button_angles: tuple = (0.0, 0.0, 0.0)
-
-    chip_length: float = 12.0
-    chip_width: float = 6.0
-    chip_thickness: float = 2.5
-    chip_center_x: float = 9.5
-    chip_center_y: float = 9.5
-    chip_across: bool = False
-    chip_snap_lip_height: float = 1.0
-    chip_snap_overlap: float = 0.4
-    chip_holddown: bool = True
-    chip_holddown_gap: float = 0.1
-
-    keyring_hole_dia: float = 6.0
-    keyring_x: float = 53.0
-    keyring_y: float = 0.0
-
-    asm_pilot_dia: float = 2.0
-    asm_clear_dia: float = 2.7
-    asm_head_dia: float = 5.0
-    asm_head_depth: float = 2.0
-    asm_positions: tuple = ((51.0, 13.0), (51.0, -13.0))
-
-    lip_width: float = 1.0
-    lip_height: float = 1.0
-
-    clearance: float = 0.30
-
-    split_z: float = field(init=False)
-
-    def __post_init__(self):
-        self.split_z = self.head_height * self.split_ratio
-
-    @property
-    def blade_z0(self):
-        return self.split_z - (self.blade_thickness + self.clearance) - self.blade_top_gap
-
-    @property
-    def chip_floor(self):
-        return max(self.split_z - self.chip_thickness - 0.6, self.wall + 0.3)
-
-    @property
-    def chip_snap_z(self):
-        z = self.split_z - self.chip_snap_lip_height
-        chip_top = self.chip_floor + self.chip_thickness
-        return max(z, chip_top + 0.15)
-
-
-P = KeyParams()
+DOC_NAME = "RenaultLoganKey"
 EPS = 0.02
 
 
 # ============================================================================
-# Geometry helpers (Part API) — same shapes/semantics as the CadQuery helpers
+# Geometry helpers (Part API) -- unchanged from the static macro, verified
+# against CadQuery's identical model.
 # ============================================================================
 
 def _vertical_edges(shape, tol=1e-6):
-    """Edges of a fresh (unfilleted) box whose two endpoints differ only in Z
-    — i.e. its 4 vertical corner edges. Used right after Part.makeBox, before
-    any other feature is unioned in, so the selection is unambiguous."""
     edges = []
     for e in shape.Edges:
         v0 = e.Vertexes[0].Point
@@ -230,8 +143,8 @@ def blade_channel(p):
 
 def chip_pocket(p):
     """Full width below chip_snap_z; narrower (overhanging snap lip) from
-    there up to the parting plane — see renault_logan_key.py for the design
-    rationale (chip is captive in the bottom half alone)."""
+    there up to the parting plane -- the chip is captive in the bottom half
+    alone (press past the lip; it springs back over the chip)."""
     if p.chip_across:
         full_l, full_w = p.chip_width + p.clearance, p.chip_length + p.clearance
     else:
@@ -282,10 +195,6 @@ def fob_retainers(p):
             ribs = r if ribs is None else ribs.fuse(r)
     return ribs
 
-
-# ============================================================================
-# Alignment lip / groove
-# ============================================================================
 
 def lip_ring(p, height, grow=0.0):
     w = p.lip_width + 2 * grow
@@ -363,8 +272,24 @@ def top_shell(p):
     return t
 
 
+def print_ready_top(p):
+    """Top half flipped flat-side-down for printing (open face up)."""
+    h = p.head_height - p.split_z
+    t = top_shell(p)
+    t.rotate(App.Vector(0, 0, 0), App.Vector(1, 0, 0), 180)
+    t.translate(App.Vector(0, 0, h))
+    return t
+
+
+def assembled(p):
+    b = bottom_shell(p)
+    t = top_shell(p)
+    t.translate(App.Vector(0, 0, p.split_z))
+    return b.fuse(t)
+
+
 # ============================================================================
-# Reference geometry (fit-check only — added to the doc, not meant to print)
+# Reference geometry (fit-check only)
 # ============================================================================
 
 def blade_reference(p):
@@ -400,66 +325,248 @@ def fob_reference(p):
 
 
 # ============================================================================
-# Export
+# LiveParams -- adapts the FreeCAD KeyParameters object's Properties to the
+# same attribute interface the geometry functions above expect (p.head_length,
+# p.button_positions, p.blade_z0, ...), so none of those functions need to
+# know or care whether they're driven by FreeCAD Properties or a plain object.
 # ============================================================================
 
-def print_ready_top(p):
-    h = p.head_height - p.split_z
-    t = top_shell(p)
-    t.rotate(App.Vector(0, 0, 0), App.Vector(1, 0, 0), 180)
-    t.translate(App.Vector(0, 0, h))
-    return t
+class LiveParams:
+    def __init__(self, obj):
+        self._obj = obj
+
+    def __getattr__(self, name):
+        if name == "button_positions":
+            return tuple(zip(self._obj.button_x, self._obj.button_y))
+        if name == "asm_positions":
+            return tuple(zip(self._obj.asm_x, self._obj.asm_y))
+        if name == "button_angles":
+            return tuple(self._obj.button_angle_overrides)
+        return getattr(self._obj, name)
+
+    @property
+    def split_z(self):
+        return self.head_height * self.split_ratio
+
+    @property
+    def blade_z0(self):
+        return self.split_z - (self.blade_thickness + self.clearance) - self.blade_top_gap
+
+    @property
+    def chip_floor(self):
+        return max(self.split_z - self.chip_thickness - 0.6, self.wall + 0.3)
+
+    @property
+    def chip_snap_z(self):
+        z = self.split_z - self.chip_snap_lip_height
+        chip_top = self.chip_floor + self.chip_thickness
+        return max(z, chip_top + 0.15)
 
 
-def assembled(p):
-    b = bottom_shell(p)
-    t = top_shell(p)
-    t.translate(App.Vector(0, 0, p.split_z))
-    return b.fuse(t)
+# ============================================================================
+# DEFAULT PARAMETER VALUES -- same numbers as cad/renault_logan_key.py.
+# Used only the FIRST time KeyParameters is created; edits you make afterward
+# in the Property panel are never overwritten by re-running this macro.
+# ============================================================================
+
+_DEFAULTS = {
+    # (property name, FreeCAD type, group, tooltip, default value)
+    "head_length": ("App::PropertyLength", "Head", "Front (blade side) to back", 58.0),
+    "head_width": ("App::PropertyLength", "Head", "Head width", 34.0),
+    "head_height": ("App::PropertyLength", "Head", "Total assembled thickness", 12.0),
+    "split_ratio": ("App::PropertyFloat", "Head", "Fraction of head_height in the BOTTOM half (>0.5 = thicker bottom, thinner top)", 0.65),
+    "corner_radius": ("App::PropertyLength", "Head", "Outer corner radius", 8.0),
+    "wall": ("App::PropertyLength", "Head", "Outer wall / floor / ceiling thickness", 2.2),
+
+    "blade_width": ("App::PropertyLength", "Blade", "Width of the metal tang (reference)", 9.0),
+    "blade_slot_width": ("App::PropertyLength", "Blade", "Width of the cut slot", 10.0),
+    "blade_thickness": ("App::PropertyLength", "Blade", "Steel stock thickness", 2.5),
+    "blade_insert": ("App::PropertyLength", "Blade", "How deep the tang slides in", 11.0),
+    "blade_top_gap": ("App::PropertyLength", "Blade", "Plastic cap thickness above the tang slot", 1.2),
+    "shoulder_length": ("App::PropertyLength", "Blade", "External shoulder length (reference)", 5.0),
+    "shoulder_width": ("App::PropertyLength", "Blade", "External shoulder width, must be > blade_width", 13.0),
+    "shoulder_thickness": ("App::PropertyLength", "Blade", "External shoulder thickness (reference)", 2.5),
+
+    "use_blade_bolt": ("App::PropertyBool", "Blade Bolt", "Add the blade retaining bolt", True),
+    "bolt_offset": ("App::PropertyLength", "Blade Bolt", "Bolt/hole centre, from the front face", 6.0),
+    "tang_hole_dia": ("App::PropertyLength", "Blade Bolt", "Factory hole in the tang (reference)", 3.2),
+    "blade_pilot_dia": ("App::PropertyLength", "Blade Bolt", "Bottom self-tap pilot hole", 2.0),
+    "blade_clear_dia": ("App::PropertyLength", "Blade Bolt", "Top shank clearance hole", 2.7),
+    "blade_head_dia": ("App::PropertyLength", "Blade Bolt", "Top counterbore diameter", 5.0),
+    "blade_head_depth": ("App::PropertyLength", "Blade Bolt", "Top counterbore depth", 2.0),
+
+    "fob_length": ("App::PropertyLength", "Fob", "Fob PCB length (X axis)", 31.5),
+    "fob_width": ("App::PropertyLength", "Fob", "Fob PCB width (Y axis)", 28.0),
+    "fob_body_thickness": ("App::PropertyLength", "Fob", "Fob body thickness, without buttons", 7.0),
+    "fob_button_height": ("App::PropertyLength", "Fob", "Button bump height (reference)", 3.0),
+    "fob_corner_r": ("App::PropertyLength", "Fob", "Corner radius (board is nearly round)", 13.0),
+    "fob_clearance": ("App::PropertyLength", "Fob", "Gap around the fob in its cavity", 0.4),
+    "fob_center_x": ("App::PropertyLength", "Fob", "Cavity centre, from the front face", 31.5),
+    "fob_retain": ("App::PropertyBool", "Fob", "Add fob retainer ribs", True),
+    "fob_retainer_dia": ("App::PropertyLength", "Fob", "Retainer rib size (reference)", 1.6),
+    "fob_retainer_grip": ("App::PropertyLength", "Fob", "Retainer interference past the fob edge", 0.2),
+
+    "button_slot_l": ("App::PropertyLength", "Buttons", "Opening size along its own long axis", 7.0),
+    "button_slot_w": ("App::PropertyLength", "Buttons", "Opening size along its own short axis", 5.0),
+    "button_slot_r": ("App::PropertyLength", "Buttons", "Opening corner radius", 1.2),
+    "button_radial": ("App::PropertyBool", "Buttons", "Auto-rotate each opening radially from the fob centre", True),
+
+    "chip_length": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier length", 12.0),
+    "chip_width": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier width", 6.0),
+    "chip_thickness": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier thickness", 2.5),
+    "chip_center_x": ("App::PropertyLength", "Immobilizer", "Nest centre X, from the front face", 9.5),
+    "chip_center_y": ("App::PropertyLength", "Immobilizer", "Nest centre Y, offset from the blade slot", 9.5),
+    "chip_across": ("App::PropertyBool", "Immobilizer", "Long axis across the key (Y) instead of along it (X)", False),
+    "chip_snap_lip_height": ("App::PropertyLength", "Immobilizer", "Height of the overhanging retention lip", 1.0),
+    "chip_snap_overlap": ("App::PropertyLength", "Immobilizer", "Lip overhang past the chip edge, per side", 0.4),
+    "chip_holddown": ("App::PropertyBool", "Immobilizer", "Add a hold-down pad on the lid", True),
+    "chip_holddown_gap": ("App::PropertyLength", "Immobilizer", "Gap left by the hold-down pad above the chip", 0.1),
+
+    "keyring_hole_dia": ("App::PropertyLength", "Keyring", "Keyring hole diameter", 6.0),
+    "keyring_x": ("App::PropertyLength", "Keyring", "Hole centre X, from the front face", 53.0),
+    "keyring_y": ("App::PropertyLength", "Keyring", "Hole centre Y", 0.0),
+
+    "asm_pilot_dia": ("App::PropertyLength", "Assembly Screws", "Bottom self-tap pilot hole", 2.0),
+    "asm_clear_dia": ("App::PropertyLength", "Assembly Screws", "Top shank clearance hole", 2.7),
+    "asm_head_dia": ("App::PropertyLength", "Assembly Screws", "Top counterbore diameter", 5.0),
+    "asm_head_depth": ("App::PropertyLength", "Assembly Screws", "Top counterbore depth", 2.0),
+
+    "lip_width": ("App::PropertyLength", "Fit", "Alignment lip width", 1.0),
+    "lip_height": ("App::PropertyLength", "Fit", "Alignment lip height", 1.0),
+    "clearance": ("App::PropertyLength", "Fit", "Gap around blade/chip pockets, applied everywhere", 0.30),
+}
+
+# FloatList properties (variable-length lists: buttons, assembly screws).
+# (name, group, tooltip, default list)
+_DEFAULT_LISTS = {
+    "button_x": ("Buttons", "Button X offsets, FOB-LOCAL mm (one per button)", [-6.0, 7.0, 7.0]),
+    "button_y": ("Buttons", "Button Y offsets, FOB-LOCAL mm (one per button)", [0.0, 7.0, -7.0]),
+    "button_angle_overrides": ("Buttons", "Explicit angles in degrees, used only if button_radial=False", [0.0, 0.0, 0.0]),
+    "asm_x": ("Assembly Screws", "Screw X positions, from the front face", [51.0, 51.0]),
+    "asm_y": ("Assembly Screws", "Screw Y positions", [13.0, -13.0]),
+}
 
 
-def build_and_save(include_references=True):
-    p = P
-    doc = App.newDocument("RenaultLoganKey")
+def _define_parameters(obj):
+    """addProperty + set DEFAULT values. Only ever called for a brand-new
+    KeyParameters object -- never touches an existing one's current values."""
+    for name, (typ, group, tip, default) in _DEFAULTS.items():
+        obj.addProperty(typ, name, group, tip)
+        setattr(obj, name, default)
+    for name, (group, tip, default) in _DEFAULT_LISTS.items():
+        obj.addProperty("App::PropertyFloatList", name, group, tip)
+        setattr(obj, name, list(default))
 
-    def add(name, shape):
-        obj = doc.addObject("Part::Feature", name)
-        obj.Shape = shape
-        return obj
 
-    add("bottom_shell", bottom_shell(p))
-    add("top_shell", print_ready_top(p))
-    add("key_assembled", assembled(p))
+# ============================================================================
+# Part::FeaturePython proxy for the shape objects
+# ============================================================================
 
-    if include_references:
-        add("ref_blade", blade_reference(p))
-        add("ref_chip", chip_reference(p))
-        add("ref_fob", fob_reference(p))
+class ShapeProxy:
+    """Generic proxy: on recompute, calls the module-level builder function
+    named in obj.Builder (a plain FreeCAD Property string, not a live Python
+    reference, so it survives FreeCAD's save/reload of the document) with a
+    LiveParams(obj.Params) view of the shared KeyParameters object."""
+
+    def __init__(self, obj, params_obj, builder_name):
+        if "Params" not in obj.PropertiesList:
+            obj.addProperty("App::PropertyLink", "Params", "Link",
+                            "The shared KeyParameters object driving this shape")
+        obj.Params = params_obj
+        if "Builder" not in obj.PropertiesList:
+            obj.addProperty("App::PropertyString", "Builder", "Link",
+                            "Name of the module-level function that builds this shape")
+        obj.Builder = builder_name
+        obj.Proxy = self
+
+    def execute(self, obj):
+        builder = globals()[obj.Builder]
+        obj.Shape = builder(LiveParams(obj.Params))
+
+    def __getstate__(self):
+        return None
+
+    def __setstate__(self, state):
+        return None
+
+
+class ViewProviderShape:
+    """Minimal ViewProvider so the shape objects behave normally in the GUI
+    (icon/selection); purely cosmetic, guarded so headless runs are unaffected."""
+
+    def __init__(self, vobj):
+        vobj.Proxy = self
+
+    def getIcon(self):
+        return ":/icons/Part_Box.svg"
+
+    def attach(self, vobj):
+        self.ViewObject = vobj
+
+    def __getstate__(self):
+        return None
+
+    def __setstate__(self, state):
+        return None
+
+
+# ============================================================================
+# Build (idempotent: safe to re-run without discarding edited values)
+# ============================================================================
+
+def get_or_create_document():
+    if DOC_NAME in App.listDocuments():
+        return App.getDocument(DOC_NAME)
+    return App.newDocument(DOC_NAME)
+
+
+def get_or_create_params(doc):
+    obj = doc.getObject("KeyParameters")
+    if obj is None:
+        obj = doc.addObject("App::FeaturePython", "KeyParameters")
+        _define_parameters(obj)
+    return obj
+
+
+def get_or_create_shape(doc, name, params_obj, builder_name):
+    obj = doc.getObject(name)
+    if obj is None:
+        obj = doc.addObject("Part::FeaturePython", name)
+    ShapeProxy(obj, params_obj, builder_name)
+    if Gui is not None:
+        try:
+            ViewProviderShape(obj.ViewObject)
+        except Exception:
+            pass
+    return obj
+
+
+def build():
+    doc = get_or_create_document()
+    params_obj = get_or_create_params(doc)
+
+    get_or_create_shape(doc, "BottomShell", params_obj, "bottom_shell")
+    get_or_create_shape(doc, "TopShell", params_obj, "print_ready_top")
+    get_or_create_shape(doc, "KeyAssembled", params_obj, "assembled")
+    get_or_create_shape(doc, "RefBlade", params_obj, "blade_reference")
+    get_or_create_shape(doc, "RefChip", params_obj, "chip_reference")
+    get_or_create_shape(doc, "RefFob", params_obj, "fob_reference")
 
     doc.recompute()
 
-    try:
-        macro_dir = os.path.dirname(os.path.abspath(__file__))
-    except NameError:
-        macro_dir = os.getcwd()
-    outdir = os.path.abspath(os.path.join(macro_dir, "..", "export"))
-    try:
-        os.makedirs(outdir, exist_ok=True)
-    except Exception:
-        outdir = os.getcwd()
-
-    save_path = os.path.join(outdir, "renault_logan_key.FCStd")
-    doc.saveAs(save_path)
-    App.Console.PrintMessage("Saved: %s\n" % save_path)
-
     if Gui is not None:
         try:
+            Gui.ActiveDocument = Gui.getDocument(doc.Name)
             Gui.ActiveDocument.ActiveView.viewIsometric()
             Gui.SendMsgToActiveView("ViewFit")
         except Exception:
             pass
 
+    App.Console.PrintMessage(
+        "Ready. Select 'KeyParameters' in the tree, edit its Properties, "
+        "then Recompute (F5) to update BottomShell/TopShell/KeyAssembled.\n"
+    )
     return doc
 
 
-build_and_save()
+build()

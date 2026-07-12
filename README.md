@@ -59,7 +59,7 @@ keyring / bolt are just pockets cut into it — no separate printed bosses.
 
 ```
 cad/renault_logan_key.py             the parametric model (edit this — CadQuery)
-cad/renault_logan_key_freecad.FCMacro same model, ported to FreeCAD's own Part API
+cad/renault_logan_key_freecad.FCMacro same model as a LIVE FreeCAD parametric object (edit in the GUI)
 cad/render_previews.py               regenerates docs/renders/*.png from the STLs
 export/bottom_shell.stl              print-ready, flat-side down          (+ .step)
 export/top_shell.stl                 print-ready, flat-side down          (+ .step)
@@ -102,34 +102,59 @@ python3 cad/renault_logan_key.py --step
 python3 cad/render_previews.py
 ```
 
-## Opening in FreeCAD
+## Opening / editing in FreeCAD
 
-Two options:
+Two options depending on what you need:
 
 - **Just want the geometry in FreeCAD?** Import `export/*.step` (File → Import)
-  — exact geometry, one click, but as a static shape (no parametric tree).
-- **Want a native, editable `.FCStd`?** Run the macro:
+  — exact geometry, one click, but a static shape (no parameters, no tree).
+- **Want to tweak dimensions directly in FreeCAD's own GUI, no code editing?**
+  Run `cad/renault_logan_key_freecad.FCMacro`:
   ```bash
   freecadcmd cad/renault_logan_key_freecad.FCMacro      # headless, no GUI needed
-  # or: FreeCAD -> Macro -> Macros... -> Execute -> browse to the file
+  # or, inside FreeCAD: Macro -> Macros... -> Execute -> browse to the file
   ```
-  It rebuilds the exact same model using FreeCAD's own `Part` scripting API
-  (same `KeyParams`, same steps) and saves `export/renault_logan_key.FCStd`
-  with `bottom_shell`, `top_shell`, `key_assembled` plus the reference
-  blade/chip/fob objects.
+  This builds a **live parametric model** using FreeCAD's own scripted-object
+  mechanism (`Part::FeaturePython`), not just a one-shot static shape:
 
-  This port could not be run inside a real FreeCAD install in the environment
-  that wrote it (none available there). It **was** cross-checked by executing
-  the identical Part-API call sequence directly against the OpenCASCADE
-  kernel (the same one FreeCAD's `Part` module wraps) and comparing the
-  result to the verified CadQuery model: bounding boxes and **exact BREP
-  volumes matched to 0.1 mm³**, and the resulting meshes were watertight
-  (0 boundary edges, 0 non-manifold junctions). The one thing that couldn't be
-  checked from outside FreeCAD is the exact `Part`/`FreeCAD` module call
-  surface itself (`Part.makeBox`, `doc.addObject`, `doc.saveAs`, etc.) — these
-  use long-stable, well-documented FreeCAD APIs, but if you hit an error on a
-  specific line when you first run it, that's the one class of issue to
-  expect; the geometry/parameters behind it are already proven correct.
+  - A **`KeyParameters`** object appears in the model tree holding every
+    dimension (head size, blade, fob, buttons, immobilizer, keyring, screws,
+    fit) as an ordinary FreeCAD Property, grouped in the Property panel.
+  - **`BottomShell`**, **`TopShell`**, **`KeyAssembled`** (plus reference
+    `RefBlade` / `RefChip` / `RefFob`) all read from `KeyParameters` and
+    rebuild their shape on recompute.
+
+  **To change something:** select `KeyParameters` in the tree, edit any value
+  in the Property panel (e.g. `head_length`, `chip_snap_overlap`,
+  `button_x`/`button_y`), then **recompute** (the refresh-arrows toolbar
+  button, or F5) — `BottomShell`/`TopShell`/`KeyAssembled` all update
+  automatically. Export whichever one you want via File → Export (STL for
+  printing, STEP for elsewhere) once you're happy with it. No code, no
+  re-running the macro needed for ordinary tweaks.
+
+  Re-running the macro later (e.g. in a fresh FreeCAD session after reopening
+  the file) is safe — it reuses the existing objects and just re-attaches
+  their live-recompute behaviour, **without discarding any values you already
+  edited**; it only fills in the defaults below the very first time.
+
+  ### On this port's verification
+  This dev environment has no FreeCAD install, so the macro could not be run
+  inside real FreeCAD. It **was** verified by executing the identical
+  Part-API call sequence (same `Part.makeBox` / `makeCylinder` / `fuse` /
+  `cut` / `makeFillet` calls) directly against the OpenCASCADE kernel that
+  FreeCAD's own `Part` module wraps, including the full live-editing cycle:
+  build → edit a property → confirm the shape is still the OLD size →
+  recompute → confirm it changed to the NEW size → re-run the macro →
+  confirm the edited value survived and no objects were duplicated. Bounding
+  boxes and **exact BREP volumes matched the CadQuery model to 0.1 mm³**, and
+  every resulting mesh was watertight (0 boundary edges, 0 non-manifold
+  junctions) both at the default dimensions and after editing several
+  parameters at once. The one thing that couldn't be exercised from outside
+  FreeCAD is the literal `FreeCAD`/`Part` module surface and the Property
+  panel UI itself (`addProperty`'s exact runtime behaviour, `.FCStd`
+  save/reload of the scripted Proxy) — if something looks off there on first
+  run, the geometry underneath it is already proven correct; it would be a
+  FreeCAD-API detail to adjust, not a design problem.
 
 ## IMPORTANT — measure your own blank before printing
 

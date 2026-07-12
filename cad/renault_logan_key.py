@@ -49,6 +49,7 @@
 # ============================================================================
 
 from dataclasses import dataclass, field
+import math
 import os
 import sys
 
@@ -69,6 +70,9 @@ class KeyParams:
     #   extra solid body beyond the fob; the keyring hole goes through it.
     head_width: float = 34.0
     head_height: float = 12.0    # total assembled thickness
+    split_ratio: float = 0.65    # fraction of head_height in the BOTTOM half.
+    #   >0.5 makes the bottom (blade/chip/fob-tray) thicker and the top (lid)
+    #   thinner — more of the fob body then sits in the sturdier bottom tray.
     corner_radius: float = 8.0
     wall: float = 2.2            # outer wall / floor / ceiling thickness
 
@@ -111,22 +115,35 @@ class KeyParams:
     # TOP half that the button caps drop into. Positions are (x, y) in FOB-LOCAL
     # mm (x along fob_length toward the back, y across). MEASURE against your
     # board. The opening is generous so a small position error still clears. ---
-    button_slot_l: float = 6.0   # opening size along X
-    button_slot_w: float = 6.0   # opening size along Y
+    button_slot_l: float = 7.0   # opening size along its own long axis
+    button_slot_w: float = 5.0   # opening size along its own short axis
     button_slot_r: float = 1.2   # corner radius of the opening
     button_positions: tuple = ((-6.0, 0.0), (7.0, 7.0), (7.0, -7.0))
+    # Each opening is rotated so it isn't axis-aligned (matches the angled
+    # button layout on the actual fob board, see photos). button_radial=True
+    # auto-picks each angle as the radial direction from the fob centre through
+    # that button (a common layout for round remotes); set False and use
+    # button_angles to give explicit degrees per button instead.
+    button_radial: bool = True
+    button_angles: tuple = (0.0, 0.0, 0.0)   # used only if button_radial=False
 
     # --- Immobilizer transponder PCF7936 ("ID46") carrier, by the blade.
-    # Fully-walled OPEN nest beside the blade (open only at the parting plane so
-    # you drop it in with the shell open); a hold-down pad on the lid then traps
-    # it so it CANNOT fall out once closed. Default is a small flat carrier. ----
+    # Fully-walled nest beside the blade, molded ENTIRELY into the bottom half.
+    # Near the top of the nest (just below the parting plane) the opening
+    # NARROWS into an overhanging snap lip on the short (width) sides: you press
+    # the chip down past the lip (the thin walls flex briefly), then it springs
+    # back and the lip overhangs the chip from above — the chip is captive in
+    # the BOTTOM HALF ALONE, with no top half needed. The top's hold-down pad
+    # (below) adds a second, belt-and-suspenders layer once the lid is on. ----
     chip_length: float = 12.0
     chip_width: float = 6.0
     chip_thickness: float = 2.5
     chip_center_x: float = 9.5    # positioned to leave a real wall front & back
     chip_center_y: float = 9.5    # offset to the side of the blade slot
     chip_across: bool = False     # False -> long axis along X (along the key)
-    chip_holddown: bool = True    # pad on the lid that traps the chip
+    chip_snap_lip_height: float = 1.0   # height of the overhanging retention lip
+    chip_snap_overlap: float = 0.4      # lip overhang past the chip edge, per side
+    chip_holddown: bool = True    # extra pad on the lid, presses the chip down
     chip_holddown_gap: float = 0.1
 
     # --- Keyring hole: a plain Z hole through the extra solid body behind the
@@ -155,7 +172,7 @@ class KeyParams:
     split_z: float = field(init=False)
 
     def __post_init__(self):
-        self.split_z = self.head_height / 2.0
+        self.split_z = self.head_height * self.split_ratio
 
     @property
     def blade_z0(self):
@@ -168,6 +185,14 @@ class KeyParams:
         chip drops in from above while the shell is open, then the closed lid
         caps it — so the floor sits chip_thickness (+a little) below the split."""
         return max(self.split_z - self.chip_thickness - 0.6, self.wall + 0.3)
+
+    @property
+    def chip_snap_z(self):
+        """Z where the nest narrows into the overhanging retention lip: full
+        width below this, an overhang from here up to the parting plane."""
+        z = self.split_z - self.chip_snap_lip_height
+        chip_top = self.chip_floor + self.chip_thickness
+        return max(z, chip_top + 0.15)
 
 
 P = KeyParams()
@@ -200,6 +225,24 @@ def rrect_ring(length, width, height, radius, ring_width):
 def cyl(dia, x, y, z0, height):
     """Vertical cylinder (a boss or a cutting peg)."""
     return cq.Workplane("XY").circle(dia / 2).extrude(height).translate((x, y, z0))
+
+
+def button_angle(p: "KeyParams", index, bx, by):
+    """Rotation (degrees) for the button opening at FOB-LOCAL offset (bx, by).
+    Radial mode points the opening's long axis away from the fob centre —
+    matches the angled button layout typical of round remotes/seen in photos."""
+    if p.button_radial:
+        return math.degrees(math.atan2(by, bx))
+    return p.button_angles[index]
+
+
+def button_slot_solid(p: "KeyParams", bx, by, index, height, z0):
+    """A rounded rectangular opening, rotated to button_angle, centred on the
+    fob-local offset (bx, by) from the fob centre."""
+    angle = button_angle(p, index, bx, by)
+    slot = rrect_solid(p.button_slot_l, p.button_slot_w, height, p.button_slot_r)
+    slot = slot.rotate((0, 0, 0), (0, 0, 1), angle)
+    return slot.translate((p.fob_center_x + bx, by, z0))
 
 
 def box_at(dx, dy, dz, x, y, z0, cx=True, cy=True):
@@ -237,27 +280,50 @@ def blade_channel(p: KeyParams):
 
 
 def chip_pocket(p: KeyParams):
-    """Open-topped nest for the PCF7936 carrier, cut into the solid front and
-    OPEN at the parting plane so you can drop the chip in with the shell open."""
+    """Nest for the PCF7936 carrier, cut into the solid front, molded ENTIRELY
+    into the bottom half. Full width from the floor up to chip_snap_z; from
+    there up to the parting plane the opening NARROWS (an overhanging snap
+    lip on the short/width sides) — you press the chip down past the lip
+    (the thin wall flexes briefly) and it is then captive with no top half
+    needed at all."""
     if p.chip_across:
-        dx, dy = p.chip_width + p.clearance, p.chip_length + p.clearance
+        full_l, full_w = p.chip_width + p.clearance, p.chip_length + p.clearance
     else:
-        dx, dy = p.chip_length + p.clearance, p.chip_width + p.clearance
+        full_l, full_w = p.chip_length + p.clearance, p.chip_width + p.clearance
+
     z0 = p.chip_floor
-    height = p.split_z - z0 + EPS          # cut up through the parting face
-    return box_at(dx, dy, height, p.chip_center_x, p.chip_center_y, z0)
+    snap_z = p.chip_snap_z
+    lower = box_at(full_l, full_w, snap_z - z0 + EPS, p.chip_center_x, p.chip_center_y, z0)
+
+    if p.chip_across:
+        narrow_l = max(full_l - 2 * p.chip_snap_overlap, 1.0)
+        narrow_w = full_w
+    else:
+        narrow_l = full_l
+        narrow_w = max(full_w - 2 * p.chip_snap_overlap, 1.0)
+    upper = box_at(narrow_l, narrow_w, p.split_z - snap_z + EPS,
+                   p.chip_center_x, p.chip_center_y, snap_z - EPS)
+
+    return lower.union(upper)
 
 
 def chip_holddown_pad(p: KeyParams):
-    """A pad on the LID (top half) that reaches down into the open chip nest and
-    traps the chip so it cannot fall out once the key is closed. Returned in the
-    top half's LOCAL frame (z=0 is the parting face), protruding below it."""
+    """A pad on the LID (top half) that reaches down through the nest's snap
+    lip opening and presses the chip — a second retention layer once the lid
+    is on, on top of the bottom half's own snap lip. Sized to the NARROW
+    (post-lip) opening so it actually fits through. Returned in the top
+    half's LOCAL frame (z=0 is the parting face), protruding below it."""
     chip_top = p.chip_floor + p.chip_thickness
     depth = p.split_z - chip_top - p.chip_holddown_gap
     if depth <= 0:
         return None
-    return box_at(p.chip_length - 1.0, p.chip_width - 1.0, depth + EPS,
-                  p.chip_center_x, p.chip_center_y, -depth)
+    if p.chip_across:
+        pad_l = max(p.chip_width - 2 * p.chip_snap_overlap - 0.6, 1.0)
+        pad_w = p.chip_length - 1.0
+    else:
+        pad_l = p.chip_length - 1.0
+        pad_w = max(p.chip_width - 2 * p.chip_snap_overlap - 0.6, 1.0)
+    return box_at(pad_l, pad_w, depth + EPS, p.chip_center_x, p.chip_center_y, -depth)
 
 
 def fob_retainers(p: KeyParams):
@@ -346,10 +412,10 @@ def top_shell(p: KeyParams):
     # keyring hole through the extra rear body
     t = t.cut(cyl(p.keyring_hole_dia, p.keyring_x, p.keyring_y, -EPS, h + 2 * EPS))
 
-    # rectangular button openings through the ceiling (the caps drop into them)
-    for (bx, by) in p.button_positions:
-        slot = rrect_solid(p.button_slot_l, p.button_slot_w, h + 2 * EPS, p.button_slot_r)\
-            .translate((p.fob_center_x + bx, by, -EPS))
+    # rectangular button openings through the ceiling (the caps drop into
+    # them), each rotated per button_angle -- not axis-aligned
+    for i, (bx, by) in enumerate(p.button_positions):
+        slot = button_slot_solid(p, bx, by, i, h + 2 * EPS, -EPS)
         t = t.cut(slot)
 
     # hold-down pad that traps the chip against its nest when the lid closes
@@ -397,9 +463,14 @@ def fob_reference(p: KeyParams):
     body = rrect_solid(p.fob_length, p.fob_width, p.fob_body_thickness, p.fob_corner_r)\
         .translate((p.fob_center_x, 0, p.wall))
     fob = body
-    for (bx, by) in p.button_positions:
-        btn = box_at(p.button_slot_l - 1.5, p.button_slot_w - 1.5, p.fob_button_height,
-                     p.fob_center_x + bx, by, p.wall + p.fob_body_thickness)
+    for i, (bx, by) in enumerate(p.button_positions):
+        angle = button_angle(p, i, bx, by)
+        btn = (
+            rrect_solid(p.button_slot_l - 1.5, p.button_slot_w - 1.5,
+                       p.fob_button_height, max(p.button_slot_r - 0.3, 0.3))
+            .rotate((0, 0, 0), (0, 0, 1), angle)
+            .translate((p.fob_center_x + bx, by, p.wall + p.fob_body_thickness))
+        )
         fob = fob.union(btn)
     return fob
 

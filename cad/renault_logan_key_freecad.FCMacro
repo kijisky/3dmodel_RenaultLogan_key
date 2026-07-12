@@ -331,18 +331,35 @@ def fob_reference(p):
 # know or care whether they're driven by FreeCAD Properties or a plain object.
 # ============================================================================
 
+def _plain_number(v):
+    """FreeCAD's App::PropertyLength values read back as Base.Quantity objects
+    (a value + a unit, e.g. "58 mm"), not plain floats -- and Quantity's
+    arithmetic is unit-checked, so e.g. `quantity - 0.01` (a bare, "unit-less"
+    float) raises Base.UnitsMismatchError. Every geometry function below is
+    written in plain floats (matching the CadQuery model exactly), so unwrap
+    Quantity -> float right here, once, at the LiveParams boundary -- nothing
+    downstream ever has to know FreeCAD Properties are involved at all."""
+    if hasattr(v, "Value"):
+        return float(v.Value)
+    return v
+
+
 class LiveParams:
     def __init__(self, obj):
         self._obj = obj
 
     def __getattr__(self, name):
         if name == "button_positions":
-            return tuple(zip(self._obj.button_x, self._obj.button_y))
+            xs = [_plain_number(v) for v in self._obj.button_x]
+            ys = [_plain_number(v) for v in self._obj.button_y]
+            return tuple(zip(xs, ys))
         if name == "asm_positions":
-            return tuple(zip(self._obj.asm_x, self._obj.asm_y))
+            xs = [_plain_number(v) for v in self._obj.asm_x]
+            ys = [_plain_number(v) for v in self._obj.asm_y]
+            return tuple(zip(xs, ys))
         if name == "button_angles":
-            return tuple(self._obj.button_angle_overrides)
-        return getattr(self._obj, name)
+            return tuple(_plain_number(v) for v in self._obj.button_angle_overrides)
+        return _plain_number(getattr(self._obj, name))
 
     @property
     def split_z(self):

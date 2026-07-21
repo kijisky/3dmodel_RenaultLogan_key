@@ -1,0 +1,591 @@
+# ============================================================================
+# Renault Logan key — LIVE parametric model for FreeCAD
+# ============================================================================
+#
+# Unlike a plain "build once and export" macro, this creates real FreeCAD
+# *scripted parametric objects* (Part::FeaturePython): a single "KeyParameters"
+# object holds every dimension as an ordinary FreeCAD Property (grouped in the
+# Property panel — Head / Blade / Fob / Buttons / Immobilizer / Keyring /
+# Assembly Screws / Fit), and three shape objects (BottomShell, TopShell,
+# KeyAssembled) that read from it and rebuild their Shape on recompute.
+#
+# WORKFLOW (all inside FreeCAD, no code editing):
+#   1. Run this macro once (Macro -> Macros... -> Execute, or freecadcmd).
+#   2. In the model tree, select "KeyParameters".
+#   3. In the Property panel, change any value (e.g. head_length, chip_width,
+#      button_x/button_y, ...).
+#   4. Recompute (the round-arrows toolbar button, or F5, or it may happen
+#      automatically depending on your "recompute on change" preference).
+#      BottomShell / TopShell / KeyAssembled all rebuild from the new values.
+#   5. Export whichever shape you want via File -> Export (STL for printing,
+#      STEP for other CAD).
+#
+# Re-running the macro (e.g. after reopening the file in a new FreeCAD
+# session) is safe: it reuses the existing KeyParameters/shape objects and
+# just re-attaches their live-recompute behaviour, WITHOUT discarding any
+# values you already edited. It only creates fresh objects with the defaults
+# below the first time (or if you deleted them).
+#
+# ----------------------------------------------------------------------------
+# This is a from-scratch FreeCAD port of the geometry validated in
+# cad/renault_logan_key.py (CadQuery). The environment that wrote this file
+# has no FreeCAD install, so it could not be run inside real FreeCAD -- it WAS
+# verified by executing the identical Part-API call sequence directly against
+# the OpenCASCADE kernel FreeCAD's own Part module wraps (same makeBox /
+# makeCylinder / fuse / cut / makeFillet calls), including a live "edit a
+# property, recompute, confirm the shape changed accordingly" cycle, not just
+# a one-shot build. Bounding boxes / exact BREP volumes matched the CadQuery
+# model. The one thing that couldn't be exercised from outside FreeCAD is the
+# literal FreeCAD module surface itself (Part::FeaturePython persistence
+# across save/reload, the Property panel UI, addProperty's exact runtime
+# behaviour) -- if something looks off there, the geometry underneath it is
+# already proven correct; it'll be a FreeCAD-API detail to adjust.
+#
+# See cad/renault_logan_key.py for the full design write-up (blade retention,
+# fob cavity, immobilizer snap-fit nest, etc.).
+# ============================================================================
+
+import math
+
+import FreeCAD as App
+import Part
+
+try:
+    import FreeCADGui as Gui
+except Exception:
+    Gui = None
+
+
+DOC_NAME = "RenaultLoganKey"
+EPS = 0.02
+
+
+# ============================================================================
+# Geometry helpers (Part API) -- unchanged from the static macro, verified
+# against CadQuery's identical model.
+# ============================================================================
+
+def _vertical_edges(shape, tol=1e-6):
+    edges = []
+    for e in shape.Edges:
+        v0 = e.Vertexes[0].Point
+        v1 = e.Vertexes[-1].Point
+        if abs(v0.x - v1.x) < tol and abs(v0.y - v1.y) < tol and abs(v0.z - v1.z) > tol:
+            edges.append(e)
+    return edges
+
+
+def rrect_solid(length, width, height, radius):
+    """Rounded rectangular prism, centred on X=Y=0, sitting on Z=0."""
+    r = min(radius, length / 2 - 0.01, width / 2 - 0.01)
+    box = Part.makeBox(length, width, max(height, 0.001),
+                       App.Vector(-length / 2, -width / 2, 0))
+    if r > 0.05:
+        edges = _vertical_edges(box)
+        if edges:
+            box = box.makeFillet(r, edges)
+    return box
+
+
+def rrect_ring(length, width, height, radius, ring_width):
+    """Hollow rounded-rectangle ring (picture-frame), centred on X=Y=0."""
+    outer = rrect_solid(length, width, height + 2 * EPS, radius)
+    outer.translate(App.Vector(0, 0, -EPS))
+    inner = rrect_solid(length - 2 * ring_width, width - 2 * ring_width,
+                        height + 4 * EPS, max(radius - ring_width, 0.4))
+    inner.translate(App.Vector(0, 0, -2 * EPS))
+    return outer.cut(inner)
+
+
+def cyl(dia, x, y, z0, height):
+    """Vertical cylinder (a boss or a cutting peg)."""
+    return Part.makeCylinder(dia / 2, max(height, 0.001), App.Vector(x, y, z0), App.Vector(0, 0, 1))
+
+
+def box_at(dx, dy, dz, x, y, z0, cx=True, cy=True):
+    ox = x - dx / 2 if cx else x
+    oy = y - dy / 2 if cy else y
+    return Part.makeBox(dx, dy, max(dz, 0.001), App.Vector(ox, oy, z0))
+
+
+def button_angle(p, index, bx, by):
+    if p.button_radial:
+        return math.degrees(math.atan2(by, bx))
+    return p.button_angles[index]
+
+
+def button_slot_solid(p, bx, by, index, height, z0):
+    angle = button_angle(p, index, bx, by)
+    slot = rrect_solid(p.button_slot_l, p.button_slot_w, height, p.button_slot_r)
+    slot.rotate(App.Vector(0, 0, 0), App.Vector(0, 0, 1), angle)
+    slot.translate(App.Vector(p.fob_center_x + bx, by, z0))
+    return slot
+
+
+# ============================================================================
+# Feature cutters (global coordinates)
+# ============================================================================
+
+def fob_cavity(p, z0, height):
+    s = rrect_solid(p.fob_length + 2 * p.fob_clearance, p.fob_width + 2 * p.fob_clearance,
+                    height, p.fob_corner_r + p.fob_clearance)
+    s.translate(App.Vector(p.fob_center_x, 0, z0))
+    return s
+
+
+def blade_channel(p):
+    bw = p.blade_slot_width
+    bt = p.blade_thickness + p.clearance
+    fob_front = p.fob_center_x - p.fob_length / 2 - p.fob_clearance
+    chan_len = fob_front + 2.5
+    return box_at(chan_len + EPS, bw, bt, -EPS, 0, p.blade_z0, cx=False)
+
+
+def chip_pocket(p):
+    """Full width below chip_snap_z; narrower (overhanging snap lip) from
+    there up to the parting plane -- the chip is captive in the bottom half
+    alone (press past the lip; it springs back over the chip)."""
+    if p.chip_across:
+        full_l, full_w = p.chip_width + p.clearance, p.chip_length + p.clearance
+    else:
+        full_l, full_w = p.chip_length + p.clearance, p.chip_width + p.clearance
+
+    z0 = p.chip_floor
+    snap_z = p.chip_snap_z
+    lower = box_at(full_l, full_w, snap_z - z0 + EPS, p.chip_center_x, p.chip_center_y, z0)
+
+    if p.chip_across:
+        narrow_l = max(full_l - 2 * p.chip_snap_overlap, 1.0)
+        narrow_w = full_w
+    else:
+        narrow_l = full_l
+        narrow_w = max(full_w - 2 * p.chip_snap_overlap, 1.0)
+    upper = box_at(narrow_l, narrow_w, p.split_z - snap_z + EPS,
+                   p.chip_center_x, p.chip_center_y, snap_z - EPS)
+
+    return lower.fuse(upper)
+
+
+def chip_holddown_pad(p):
+    chip_top = p.chip_floor + p.chip_thickness
+    depth = p.split_z - chip_top - p.chip_holddown_gap
+    if depth <= 0:
+        return None
+    if p.chip_across:
+        pad_l = max(p.chip_width - 2 * p.chip_snap_overlap - 0.6, 1.0)
+        pad_w = p.chip_length - 1.0
+    else:
+        pad_l = p.chip_length - 1.0
+        pad_w = max(p.chip_width - 2 * p.chip_snap_overlap - 0.6, 1.0)
+    return box_at(pad_l, pad_w, depth + EPS, p.chip_center_x, p.chip_center_y, -depth)
+
+
+def fob_retainers(p):
+    """One small crush rib per long (Y) cavity wall, gripping the fob edge so
+    it can't rattle or spin."""
+    g = p.fob_retainer_grip
+    rib_len = p.fob_retainer_thickness
+    inner = p.fob_width / 2 - g
+    outer = p.fob_width / 2 + p.fob_clearance + 1.0
+    cy_pos = (inner + outer) / 2
+    dy = outer - inner
+    rib_x = p.fob_center_x + p.fob_retainer_dx
+    ribs = None
+    for sy in (1, -1):
+        r = box_at(rib_len, dy, p.split_z - p.wall + EPS, rib_x, sy * cy_pos, p.wall)
+        ribs = r if ribs is None else ribs.fuse(r)
+    return ribs
+
+
+def lip_ring(p, height, grow=0.0):
+    w = p.lip_width + 2 * grow
+    outer_len = (p.head_length - p.wall) + w
+    outer_wid = (p.head_width - p.wall) + w
+    rad = max(p.corner_radius - (p.wall - w) / 2, 0.6)
+    return rrect_ring(outer_len, outer_wid, height, rad, w)
+
+
+# ============================================================================
+# Shell halves
+# ============================================================================
+
+def bottom_shell(p):
+    cx = p.head_length / 2
+    b = rrect_solid(p.head_length, p.head_width, p.split_z, p.corner_radius)
+    b.translate(App.Vector(cx, 0, 0))
+
+    b = b.cut(fob_cavity(p, p.wall, p.split_z))
+
+    if p.fob_retain:
+        b = b.fuse(fob_retainers(p))
+
+    skirt = 0.6
+    lip = lip_ring(p, p.lip_height + skirt)
+    lip.translate(App.Vector(cx, 0, p.split_z - skirt))
+    b = b.fuse(lip)
+
+    trim = rrect_solid(p.head_length, p.head_width, p.split_z + p.lip_height + 1, p.corner_radius)
+    trim.translate(App.Vector(cx, 0, 0))
+    b = b.common(trim)
+
+    b = b.cut(blade_channel(p))
+    b = b.cut(chip_pocket(p))
+    b = b.cut(cyl(p.keyring_hole_dia, p.keyring_x, p.keyring_y, -EPS, p.split_z + 2 * EPS))
+
+    floor_keep = 1.0
+    for (x, y) in p.asm_positions:
+        b = b.cut(cyl(p.asm_pilot_dia, x, y, floor_keep, p.split_z - floor_keep + EPS))
+    if p.use_blade_bolt:
+        b = b.cut(cyl(p.blade_pilot_dia, p.bolt_offset, 0, floor_keep, p.split_z - floor_keep + EPS))
+    return b
+
+
+def top_shell(p):
+    cx = p.head_length / 2
+    h = p.head_height - p.split_z
+    t = rrect_solid(p.head_length, p.head_width, h, p.corner_radius)
+    t.translate(App.Vector(cx, 0, 0))
+
+    t = t.cut(fob_cavity(p, -EPS, h - p.wall + EPS))
+
+    groove = lip_ring(p, p.lip_height + p.clearance, grow=p.clearance)
+    groove.translate(App.Vector(cx, 0, 0))
+    t = t.cut(groove)
+
+    t = t.cut(cyl(p.keyring_hole_dia, p.keyring_x, p.keyring_y, -EPS, h + 2 * EPS))
+
+    for i, (bx, by) in enumerate(p.button_positions):
+        slot = button_slot_solid(p, bx, by, i, h + 2 * EPS, -EPS)
+        t = t.cut(slot)
+
+    if p.chip_holddown:
+        pad = chip_holddown_pad(p)
+        if pad is not None:
+            t = t.fuse(pad)
+
+    for (x, y) in p.asm_positions:
+        t = t.cut(cyl(p.asm_clear_dia, x, y, -EPS, h + 2 * EPS))
+        t = t.cut(cyl(p.asm_head_dia, x, y, h - p.asm_head_depth, p.asm_head_depth + EPS))
+
+    if p.use_blade_bolt:
+        t = t.cut(cyl(p.blade_clear_dia, p.bolt_offset, 0, -EPS, h + 2 * EPS))
+        t = t.cut(cyl(p.blade_head_dia, p.bolt_offset, 0, h - p.blade_head_depth, p.blade_head_depth + EPS))
+    return t
+
+
+def print_ready_top(p):
+    """Top half flipped flat-side-down for printing (open face up)."""
+    h = p.head_height - p.split_z
+    t = top_shell(p)
+    t.rotate(App.Vector(0, 0, 0), App.Vector(1, 0, 0), 180)
+    t.translate(App.Vector(0, 0, h))
+    return t
+
+
+def assembled(p):
+    b = bottom_shell(p)
+    t = top_shell(p)
+    t.translate(App.Vector(0, 0, p.split_z))
+    return b.fuse(t)
+
+
+# ============================================================================
+# Reference geometry (fit-check only)
+# ============================================================================
+
+def blade_reference(p):
+    z0 = p.blade_z0
+    tang = box_at(p.wall + p.blade_insert, p.blade_width, p.blade_thickness, 0, 0, z0, cx=False)
+    shoulder = box_at(p.shoulder_length, p.shoulder_width, p.shoulder_thickness,
+                      -p.shoulder_length, 0, z0, cx=False)
+    blade = box_at(20, p.blade_width, p.blade_thickness, -p.shoulder_length - 20, 0, z0, cx=False)
+    hole = cyl(p.tang_hole_dia, p.bolt_offset, 0, z0 - 1, p.blade_thickness + 2)
+    return tang.fuse(shoulder).fuse(blade).cut(hole)
+
+
+def chip_reference(p):
+    if p.chip_across:
+        dx, dy = p.chip_width, p.chip_length
+    else:
+        dx, dy = p.chip_length, p.chip_width
+    return box_at(dx, dy, p.chip_thickness, p.chip_center_x, p.chip_center_y, p.chip_floor)
+
+
+def fob_reference(p):
+    body = rrect_solid(p.fob_length, p.fob_width, p.fob_body_thickness, p.fob_corner_r)
+    body.translate(App.Vector(p.fob_center_x, 0, p.wall))
+    fob = body
+    for i, (bx, by) in enumerate(p.button_positions):
+        angle = button_angle(p, i, bx, by)
+        btn = rrect_solid(p.button_slot_l - 1.5, p.button_slot_w - 1.5,
+                          p.fob_button_height, max(p.button_slot_r - 0.3, 0.3))
+        btn.rotate(App.Vector(0, 0, 0), App.Vector(0, 0, 1), angle)
+        btn.translate(App.Vector(p.fob_center_x + bx, by, p.wall + p.fob_body_thickness))
+        fob = fob.fuse(btn)
+    return fob
+
+
+# ============================================================================
+# LiveParams -- adapts the FreeCAD KeyParameters object's Properties to the
+# same attribute interface the geometry functions above expect (p.head_length,
+# p.button_positions, p.blade_z0, ...), so none of those functions need to
+# know or care whether they're driven by FreeCAD Properties or a plain object.
+# ============================================================================
+
+def _plain_number(v):
+    """FreeCAD's App::PropertyLength values read back as Base.Quantity objects
+    (a value + a unit, e.g. "58 mm"), not plain floats -- and Quantity's
+    arithmetic is unit-checked, so e.g. `quantity - 0.01` (a bare, "unit-less"
+    float) raises Base.UnitsMismatchError. Every geometry function below is
+    written in plain floats (matching the CadQuery model exactly), so unwrap
+    Quantity -> float right here, once, at the LiveParams boundary -- nothing
+    downstream ever has to know FreeCAD Properties are involved at all."""
+    if hasattr(v, "Value"):
+        return float(v.Value)
+    return v
+
+
+class LiveParams:
+    def __init__(self, obj):
+        self._obj = obj
+
+    def __getattr__(self, name):
+        if name == "button_positions":
+            xs = [_plain_number(v) for v in self._obj.button_x]
+            ys = [_plain_number(v) for v in self._obj.button_y]
+            return tuple(zip(xs, ys))
+        if name == "asm_positions":
+            xs = [_plain_number(v) for v in self._obj.asm_x]
+            ys = [_plain_number(v) for v in self._obj.asm_y]
+            return tuple(zip(xs, ys))
+        if name == "button_angles":
+            return tuple(_plain_number(v) for v in self._obj.button_angle_overrides)
+        return _plain_number(getattr(self._obj, name))
+
+    @property
+    def split_z(self):
+        return self.head_height * self.split_ratio
+
+    @property
+    def blade_z0(self):
+        return self.split_z - (self.blade_thickness + self.clearance) - self.blade_top_gap
+
+    @property
+    def chip_floor(self):
+        return max(self.split_z - self.chip_thickness - 0.6, self.wall + 0.3)
+
+    @property
+    def chip_snap_z(self):
+        z = self.split_z - self.chip_snap_lip_height
+        chip_top = self.chip_floor + self.chip_thickness
+        return max(z, chip_top + 0.15)
+
+
+# ============================================================================
+# DEFAULT PARAMETER VALUES -- same numbers as cad/renault_logan_key.py.
+# Used only the FIRST time KeyParameters is created; edits you make afterward
+# in the Property panel are never overwritten by re-running this macro.
+# ============================================================================
+
+_DEFAULTS = {
+    # (property name, FreeCAD type, group, tooltip, default value)
+    "head_length": ("App::PropertyLength", "Head", "Front (blade side) to back", 58.0),
+    "head_width": ("App::PropertyLength", "Head", "Head width", 34.0),
+    "head_height": ("App::PropertyLength", "Head", "Total assembled thickness", 12.0),
+    "split_ratio": ("App::PropertyFloat", "Head", "Fraction of head_height in the BOTTOM half (>0.5 = thicker bottom, thinner top)", 0.65),
+    "corner_radius": ("App::PropertyLength", "Head", "Outer corner radius", 8.0),
+    "wall": ("App::PropertyLength", "Head", "Outer wall / floor / ceiling thickness", 2.2),
+
+    "blade_width": ("App::PropertyLength", "Blade", "Width of the metal tang (reference)", 9.0),
+    "blade_slot_width": ("App::PropertyLength", "Blade", "Width of the cut slot", 10.0),
+    "blade_thickness": ("App::PropertyLength", "Blade", "Steel stock thickness", 2.5),
+    "blade_insert": ("App::PropertyLength", "Blade", "How deep the tang slides in", 11.0),
+    "blade_top_gap": ("App::PropertyLength", "Blade", "Plastic cap thickness above the tang slot", 1.2),
+    "shoulder_length": ("App::PropertyLength", "Blade", "External shoulder length (reference)", 5.0),
+    "shoulder_width": ("App::PropertyLength", "Blade", "External shoulder width, must be > blade_width", 13.0),
+    "shoulder_thickness": ("App::PropertyLength", "Blade", "External shoulder thickness (reference)", 2.5),
+
+    "use_blade_bolt": ("App::PropertyBool", "Blade Bolt", "Add the blade retaining bolt", True),
+    "bolt_offset": ("App::PropertyLength", "Blade Bolt", "Bolt/hole centre, from the front face", 6.0),
+    "tang_hole_dia": ("App::PropertyLength", "Blade Bolt", "Factory hole in the tang (reference)", 3.2),
+    "blade_pilot_dia": ("App::PropertyLength", "Blade Bolt", "Bottom self-tap pilot hole", 2.0),
+    "blade_clear_dia": ("App::PropertyLength", "Blade Bolt", "Top shank clearance hole", 2.7),
+    "blade_head_dia": ("App::PropertyLength", "Blade Bolt", "Top counterbore diameter", 5.0),
+    "blade_head_depth": ("App::PropertyLength", "Blade Bolt", "Top counterbore depth", 2.0),
+
+    "fob_length": ("App::PropertyLength", "Fob", "Fob PCB length (X axis)", 31.5),
+    "fob_width": ("App::PropertyLength", "Fob", "Fob PCB width (Y axis)", 28.0),
+    "fob_body_thickness": ("App::PropertyLength", "Fob", "Fob body thickness, without buttons", 7.0),
+    "fob_button_height": ("App::PropertyLength", "Fob", "Button bump height (reference)", 3.0),
+    "fob_corner_r": ("App::PropertyLength", "Fob", "Corner radius (board is nearly round)", 13.0),
+    "fob_clearance": ("App::PropertyLength", "Fob", "Gap around the fob in its cavity", 0.4),
+    "fob_center_x": ("App::PropertyLength", "Fob", "Cavity centre, from the front face", 31.5),
+    "fob_retain": ("App::PropertyBool", "Fob", "Add fob retainer ribs (one per long/Y wall)", True),
+    "fob_retainer_thickness": ("App::PropertyLength", "Fob", "Rib length along the wall", 1.0),
+    "fob_retainer_dx": ("App::PropertyLength", "Fob", "Rib X offset from fob centre (+ = toward the back)", 3.0),
+    "fob_retainer_grip": ("App::PropertyLength", "Fob", "Retainer interference past the fob edge", 0.2),
+
+    "button_slot_l": ("App::PropertyLength", "Buttons", "Opening size along its own long axis", 7.0),
+    "button_slot_w": ("App::PropertyLength", "Buttons", "Opening size along its own short axis", 5.0),
+    "button_slot_r": ("App::PropertyLength", "Buttons", "Opening corner radius", 1.2),
+    "button_radial": ("App::PropertyBool", "Buttons", "Auto-rotate each opening radially from the fob centre", True),
+
+    "chip_length": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier length", 12.0),
+    "chip_width": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier width", 6.0),
+    "chip_thickness": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier thickness", 2.5),
+    "chip_center_x": ("App::PropertyLength", "Immobilizer", "Nest centre X, from the front face", 9.5),
+    "chip_center_y": ("App::PropertyLength", "Immobilizer", "Nest centre Y, offset from the blade slot", 9.5),
+    "chip_across": ("App::PropertyBool", "Immobilizer", "Long axis across the key (Y) instead of along it (X)", False),
+    "chip_snap_lip_height": ("App::PropertyLength", "Immobilizer", "Height of the overhanging retention lip", 1.0),
+    "chip_snap_overlap": ("App::PropertyLength", "Immobilizer", "Lip overhang past the chip edge, per side", 0.4),
+    "chip_holddown": ("App::PropertyBool", "Immobilizer", "Add a hold-down pad on the lid", True),
+    "chip_holddown_gap": ("App::PropertyLength", "Immobilizer", "Gap left by the hold-down pad above the chip", 0.1),
+
+    "keyring_hole_dia": ("App::PropertyLength", "Keyring", "Keyring hole diameter", 6.0),
+    "keyring_x": ("App::PropertyLength", "Keyring", "Hole centre X, from the front face", 53.0),
+    "keyring_y": ("App::PropertyLength", "Keyring", "Hole centre Y, off-centre toward one edge", 8.0),
+
+    "asm_pilot_dia": ("App::PropertyLength", "Assembly Screws", "Bottom self-tap pilot hole", 2.0),
+    "asm_clear_dia": ("App::PropertyLength", "Assembly Screws", "Top shank clearance hole", 2.7),
+    "asm_head_dia": ("App::PropertyLength", "Assembly Screws", "Top counterbore diameter", 5.0),
+    "asm_head_depth": ("App::PropertyLength", "Assembly Screws", "Top counterbore depth", 2.0),
+
+    "lip_width": ("App::PropertyLength", "Fit", "Alignment lip width", 1.0),
+    "lip_height": ("App::PropertyLength", "Fit", "Alignment lip height", 1.0),
+    "clearance": ("App::PropertyLength", "Fit", "Gap around blade/chip pockets, applied everywhere", 0.30),
+}
+
+# FloatList properties (variable-length lists: buttons, assembly screws).
+# (name, group, tooltip, default list)
+_DEFAULT_LISTS = {
+    "button_x": ("Buttons", "Button X offsets, FOB-LOCAL mm (one per button)", [-6.0, 7.0, 7.0]),
+    "button_y": ("Buttons", "Button Y offsets, FOB-LOCAL mm (one per button)", [0.0, 7.0, -7.0]),
+    "button_angle_overrides": ("Buttons", "Explicit angles in degrees, used only if button_radial=False", [0.0, 0.0, 0.0]),
+    "asm_x": ("Assembly Screws", "Screw X positions, from the front face", [51.0, 51.0]),
+    "asm_y": ("Assembly Screws", "Screw Y positions", [13.0, -13.0]),
+}
+
+
+def _define_parameters(obj):
+    """addProperty + set DEFAULT values. Only ever called for a brand-new
+    KeyParameters object -- never touches an existing one's current values."""
+    for name, (typ, group, tip, default) in _DEFAULTS.items():
+        obj.addProperty(typ, name, group, tip)
+        setattr(obj, name, default)
+    for name, (group, tip, default) in _DEFAULT_LISTS.items():
+        obj.addProperty("App::PropertyFloatList", name, group, tip)
+        setattr(obj, name, list(default))
+
+
+# ============================================================================
+# Part::FeaturePython proxy for the shape objects
+# ============================================================================
+
+class ShapeProxy:
+    """Generic proxy: on recompute, calls the module-level builder function
+    named in obj.Builder (a plain FreeCAD Property string, not a live Python
+    reference, so it survives FreeCAD's save/reload of the document) with a
+    LiveParams(obj.Params) view of the shared KeyParameters object."""
+
+    def __init__(self, obj, params_obj, builder_name):
+        if "Params" not in obj.PropertiesList:
+            obj.addProperty("App::PropertyLink", "Params", "Link",
+                            "The shared KeyParameters object driving this shape")
+        obj.Params = params_obj
+        if "Builder" not in obj.PropertiesList:
+            obj.addProperty("App::PropertyString", "Builder", "Link",
+                            "Name of the module-level function that builds this shape")
+        obj.Builder = builder_name
+        obj.Proxy = self
+
+    def execute(self, obj):
+        builder = globals()[obj.Builder]
+        obj.Shape = builder(LiveParams(obj.Params))
+
+    def __getstate__(self):
+        return None
+
+    def __setstate__(self, state):
+        return None
+
+
+class ViewProviderShape:
+    """Minimal ViewProvider so the shape objects behave normally in the GUI
+    (icon/selection); purely cosmetic, guarded so headless runs are unaffected."""
+
+    def __init__(self, vobj):
+        vobj.Proxy = self
+
+    def getIcon(self):
+        return ":/icons/Part_Box.svg"
+
+    def attach(self, vobj):
+        self.ViewObject = vobj
+
+    def __getstate__(self):
+        return None
+
+    def __setstate__(self, state):
+        return None
+
+
+# ============================================================================
+# Build (idempotent: safe to re-run without discarding edited values)
+# ============================================================================
+
+def get_or_create_document():
+    if DOC_NAME in App.listDocuments():
+        return App.getDocument(DOC_NAME)
+    return App.newDocument(DOC_NAME)
+
+
+def get_or_create_params(doc):
+    obj = doc.getObject("KeyParameters")
+    if obj is None:
+        obj = doc.addObject("App::FeaturePython", "KeyParameters")
+        _define_parameters(obj)
+    return obj
+
+
+def get_or_create_shape(doc, name, params_obj, builder_name):
+    obj = doc.getObject(name)
+    if obj is None:
+        obj = doc.addObject("Part::FeaturePython", name)
+    ShapeProxy(obj, params_obj, builder_name)
+    if Gui is not None:
+        try:
+            ViewProviderShape(obj.ViewObject)
+        except Exception:
+            pass
+    return obj
+
+
+def build():
+    doc = get_or_create_document()
+    params_obj = get_or_create_params(doc)
+
+    get_or_create_shape(doc, "BottomShell", params_obj, "bottom_shell")
+    get_or_create_shape(doc, "TopShell", params_obj, "print_ready_top")
+    get_or_create_shape(doc, "KeyAssembled", params_obj, "assembled")
+    get_or_create_shape(doc, "RefBlade", params_obj, "blade_reference")
+    get_or_create_shape(doc, "RefChip", params_obj, "chip_reference")
+    get_or_create_shape(doc, "RefFob", params_obj, "fob_reference")
+
+    doc.recompute()
+
+    if Gui is not None:
+        try:
+            Gui.ActiveDocument = Gui.getDocument(doc.Name)
+            Gui.ActiveDocument.ActiveView.viewIsometric()
+            Gui.SendMsgToActiveView("ViewFit")
+        except Exception:
+            pass
+
+    App.Console.PrintMessage(
+        "Ready. Select 'KeyParameters' in the tree, edit its Properties, "
+        "then Recompute (F5) to update BottomShell/TopShell/KeyAssembled.\n"
+    )
+    return doc
+
+
+build()

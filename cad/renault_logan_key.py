@@ -19,7 +19,9 @@
 #   2. The alarm-remote fob (a round PCB ~31.5 x 28 mm, ~7 mm thick, with 3
 #      buttons on one face) drops into a rounded CAVITY that fills the middle
 #      and rear of the head. Three BUTTON HOLES through the TOP half sit over
-#      the fob's buttons so they can be pressed with the lid closed.
+#      the fob's buttons so they can be pressed with the lid closed. A small
+#      round WINDOW over the fob's blink indicator (lights on any button
+#      press) takes a separate transparent plug — see indicator_plug() below.
 #
 #   3. The PCF7936 ("ID46") immobilizer transponder sits in a small nest in the
 #      solid front, next to the blade.
@@ -130,6 +132,18 @@ class KeyParams:
     # button_angles to give explicit degrees per button instead.
     button_radial: bool = True
     button_angles: tuple = (0.0, 0.0, 0.0)   # used only if button_radial=False
+
+    # --- Status LED window: a small round see-through plug over the fob's
+    # blink indicator (lights up when ANY button is pressed). Sits ABOVE the
+    # side open/close buttons (button_positions[1]/[2]), centred between them
+    # -- fob-local X further back, Y centred. Printed as a SEPARATE small part
+    # in transparent filament: indicator_plug's export is already positioned
+    # to drop into the matching hole in top_shell, so load both on the same
+    # plate and assign each its own AMS filament for a one-print job.
+    # MEASURE against your board; the indicator moves with board revisions. -
+    indicator_dia: float = 6.0    # window diameter, about the size of a button
+    indicator_x: float = 12.0     # fob-local X, further back than the side buttons
+    indicator_y: float = 0.0      # fob-local Y, centred between them
 
     # --- Immobilizer transponder PCF7936 ("ID46") carrier, by the blade.
     # Fully-walled nest beside the blade, molded ENTIRELY into the bottom half.
@@ -270,6 +284,15 @@ def fob_cavity(p: KeyParams, z0, height):
     ).translate((p.fob_center_x, 0, z0))
 
 
+def indicator_window(p: KeyParams):
+    """Round through-hole in the top ceiling for the transparent LED window
+    plug. A touch oversized (by `clearance`) so the plug is a light press fit,
+    not a struggle."""
+    h = p.head_height - p.split_z
+    return cyl(p.indicator_dia + p.clearance,
+              p.fob_center_x + p.indicator_x, p.indicator_y, -EPS, h + 2 * EPS)
+
+
 def blade_channel(p: KeyParams):
     """Tang slot cut into the solid front at the blade height. It runs THROUGH
     from the front face into the fob cavity (so the tang slot is a passage, not
@@ -407,6 +430,10 @@ def top_shell(p: KeyParams):
     # halves let the fob rattle (too much total depth). Leaving the top solid
     # over the fob region relies on the bottom pocket alone to hold it snug.
 
+    # round window over the blink indicator -- the matching transparent plug
+    # is indicator_plug()/print_ready_indicator_plug()
+    t = t.cut(indicator_window(p))
+
     # groove matching the bottom lip
     groove = lip_ring(p, p.lip_height + p.clearance, grow=p.clearance).translate((cx, 0, 0))
     t = t.cut(groove)
@@ -487,8 +514,26 @@ def print_ready_top(p: KeyParams):
     return top_shell(p).rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, h))
 
 
+def indicator_plug(p: KeyParams):
+    """Transparent plug that presses into indicator_window, flush with both
+    the outer face and the fob-cavity ceiling (same z-span as top_shell's
+    ceiling at that point, since no cavity is cut into it)."""
+    h = p.head_height - p.split_z
+    return cyl(p.indicator_dia, p.fob_center_x + p.indicator_x, p.indicator_y, 0, h)
+
+
+def print_ready_indicator_plug(p: KeyParams):
+    """Same flip/translate as print_ready_top, so the plug lines up with the
+    printed top half when both sit on the same slicer plate at their native
+    (exported) position -- assign each its own AMS filament and print as one
+    job."""
+    h = p.head_height - p.split_z
+    return indicator_plug(p).rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, h))
+
+
 def assembled(p: KeyParams):
-    return bottom_shell(p).union(top_shell(p).translate((0, 0, p.split_z)))
+    top = top_shell(p).union(indicator_plug(p))
+    return bottom_shell(p).union(top.translate((0, 0, p.split_z)))
 
 
 def main():
@@ -500,6 +545,7 @@ def main():
         "bottom_shell": bottom_shell(p),
         "top_shell": print_ready_top(p),
         "key_assembled": assembled(p),
+        "indicator_plug": print_ready_indicator_plug(p),
     }
     for name, solid in parts.items():
         cq.exporters.export(solid, os.path.join(outdir, name + ".stl"),

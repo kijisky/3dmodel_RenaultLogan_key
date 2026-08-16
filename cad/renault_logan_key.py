@@ -21,7 +21,11 @@
 #      and rear of the head. Three BUTTON HOLES through the TOP half sit over
 #      the fob's buttons so they can be pressed with the lid closed. A small
 #      round WINDOW over the fob's blink indicator (lights on any button
-#      press) takes a separate transparent plug — see indicator_plug() below.
+#      press) is split from the top half at EXACTLY the window boundary (zero
+#      clearance) into a second body — see indicator_window_insert() below —
+#      so a multi-material printer (Bambu AMS, Anycubic ACE, ...) prints the
+#      whole top half as ONE seamless part with a transparent window, no
+#      gluing or press-fitting needed.
 #
 #   3. The PCF7936 ("ID46") immobilizer transponder sits in a small nest in the
 #      solid front, next to the blade.
@@ -133,14 +137,17 @@ class KeyParams:
     button_radial: bool = True
     button_angles: tuple = (0.0, 0.0, 0.0)   # used only if button_radial=False
 
-    # --- Status LED window: a small round see-through plug over the fob's
+    # --- Status LED window: a small round see-through region over the fob's
     # blink indicator (lights up when ANY button is pressed). Sits ABOVE the
     # side open/close buttons (button_positions[1]/[2]), centred between them
-    # -- fob-local X further back, Y centred. Printed as a SEPARATE small part
-    # in transparent filament: indicator_plug's export is already positioned
-    # to drop into the matching hole in top_shell, so load both on the same
-    # plate and assign each its own AMS filament for a one-print job.
-    # MEASURE against your board; the indicator moves with board revisions. -
+    # -- fob-local X further back, Y centred. top_shell() is split into TWO
+    # bodies at EXACTLY this cylinder (zero clearance, see indicator_window()
+    # / indicator_window_insert()) -- not a press-fit plug. Load both STLs on
+    # the same plate at their exported position and assign each its own
+    # filament in a multi-material printer (Bambu AMS, Anycubic ACE, ...): it
+    # prints as ONE physical part with a built-in transparent window, no
+    # assembly step. MEASURE against your board; the indicator moves with
+    # board revisions. --------------------------------------------------
     indicator_dia: float = 6.0    # window diameter, about the size of a button
     indicator_x: float = 12.0     # fob-local X, further back than the side buttons
     indicator_y: float = 0.0      # fob-local Y, centred between them
@@ -285,11 +292,12 @@ def fob_cavity(p: KeyParams, z0, height):
 
 
 def indicator_window(p: KeyParams):
-    """Round through-hole in the top ceiling for the transparent LED window
-    plug. A touch oversized (by `clearance`) so the plug is a light press fit,
-    not a struggle."""
+    """Boundary that splits the top ceiling into two bodies for multi-material
+    printing: top_shell() is cut with this, indicator_window_insert() is
+    exactly this cylinder -- ZERO clearance, so the two share a seamless
+    boundary (no gap to press-fit or glue, just a filament change)."""
     h = p.head_height - p.split_z
-    return cyl(p.indicator_dia + p.clearance,
+    return cyl(p.indicator_dia,
               p.fob_center_x + p.indicator_x, p.indicator_y, -EPS, h + 2 * EPS)
 
 
@@ -430,8 +438,8 @@ def top_shell(p: KeyParams):
     # halves let the fob rattle (too much total depth). Leaving the top solid
     # over the fob region relies on the bottom pocket alone to hold it snug.
 
-    # round window over the blink indicator -- the matching transparent plug
-    # is indicator_plug()/print_ready_indicator_plug()
+    # round window over the blink indicator, split off as a second body for
+    # multi-material printing -- see indicator_window_insert() below
     t = t.cut(indicator_window(p))
 
     # groove matching the bottom lip
@@ -514,25 +522,26 @@ def print_ready_top(p: KeyParams):
     return top_shell(p).rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, h))
 
 
-def indicator_plug(p: KeyParams):
-    """Transparent plug that presses into indicator_window, flush with both
-    the outer face and the fob-cavity ceiling (same z-span as top_shell's
-    ceiling at that point, since no cavity is cut into it)."""
+def indicator_window_insert(p: KeyParams):
+    """The small body cut out of top_shell() by indicator_window() -- EXACTLY
+    that cylinder (same diameter, no clearance), so it's a seamless fill, not
+    a separate part to press in. Print it in a different filament/colour on a
+    multi-material printer and the two bodies come out as one physical piece."""
     h = p.head_height - p.split_z
     return cyl(p.indicator_dia, p.fob_center_x + p.indicator_x, p.indicator_y, 0, h)
 
 
-def print_ready_indicator_plug(p: KeyParams):
-    """Same flip/translate as print_ready_top, so the plug lines up with the
+def print_ready_indicator_window_insert(p: KeyParams):
+    """Same flip/translate as print_ready_top, so this lines up with the
     printed top half when both sit on the same slicer plate at their native
-    (exported) position -- assign each its own AMS filament and print as one
-    job."""
+    (exported) position -- assign each its own filament/colour and print as
+    one job (Bambu AMS, Anycubic ACE, ...)."""
     h = p.head_height - p.split_z
-    return indicator_plug(p).rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, h))
+    return indicator_window_insert(p).rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, h))
 
 
 def assembled(p: KeyParams):
-    top = top_shell(p).union(indicator_plug(p))
+    top = top_shell(p).union(indicator_window_insert(p))
     return bottom_shell(p).union(top.translate((0, 0, p.split_z)))
 
 
@@ -545,7 +554,7 @@ def main():
         "bottom_shell": bottom_shell(p),
         "top_shell": print_ready_top(p),
         "key_assembled": assembled(p),
-        "indicator_plug": print_ready_indicator_plug(p),
+        "indicator_window_insert": print_ready_indicator_window_insert(p),
     }
     for name, solid in parts.items():
         cq.exporters.export(solid, os.path.join(outdir, name + ".stl"),

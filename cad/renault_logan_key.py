@@ -113,7 +113,7 @@ class KeyParams:
     fob_retain: bool = True
     fob_retainer_thickness: float = 1.0
     fob_retainer_dx: float = 3.0
-    fob_retainer_grip: float = 0.2
+    fob_retainer_grip: float = 0.6
 
     # --- Fob buttons: 3 buttons on ONE face -> RECTANGULAR openings through the
     # TOP half that the button caps drop into. Positions are (x, y) in FOB-LOCAL
@@ -122,7 +122,7 @@ class KeyParams:
     button_slot_l: float = 7.0   # opening size along its own long axis
     button_slot_w: float = 5.0   # opening size along its own short axis
     button_slot_r: float = 1.2   # corner radius of the opening
-    button_positions: tuple = ((-6.0, 0.0), (7.0, 7.0), (7.0, -7.0))
+    button_positions: tuple = ((-6.0, 0.1), (6.0, 6.0), (6.0, -6.0))
     # Each opening is rotated so it isn't axis-aligned (matches the angled
     # button layout on the actual fob board, see photos). button_radial=True
     # auto-picks each angle as the radial direction from the fob centre through
@@ -141,7 +141,7 @@ class KeyParams:
     # (below) adds a second, belt-and-suspenders layer once the lid is on. ----
     chip_length: float = 12.0
     chip_width: float = 6.0
-    chip_thickness: float = 2.5
+    chip_thickness: float = 1.5
     chip_center_x: float = 9.5    # positioned to leave a real wall front & back
     chip_center_y: float = 9.5    # offset to the side of the blade slot
     chip_across: bool = False     # False -> long axis along X (along the key)
@@ -159,7 +159,7 @@ class KeyParams:
     # --- Assembly screws: 2 at the back corners; the blade bolt clamps the
     # front. Sized for M2.5 self-tapping screws. ----------------------------
     asm_pilot_dia: float = 2.0
-    asm_clear_dia: float = 2.7
+    asm_clear_dia: float = 1.0
     asm_head_dia: float = 5.0
     asm_head_depth: float = 2.0
     asm_positions: tuple = ((51.0, 13.0), (51.0, -13.0))
@@ -243,7 +243,7 @@ def button_angle(p: "KeyParams", index, bx, by):
 def button_slot_solid(p: "KeyParams", bx, by, index, height, z0):
     """A rounded rectangular opening, rotated to button_angle, centred on the
     fob-local offset (bx, by) from the fob centre."""
-    angle = button_angle(p, index, bx, by)
+    angle = button_angle(p, index, bx, by) + 90
     slot = rrect_solid(p.button_slot_l, p.button_slot_w, height, p.button_slot_r)
     slot = slot.rotate((0, 0, 0), (0, 0, 1), angle)
     return slot.translate((p.fob_center_x + bx, by, z0))
@@ -465,7 +465,7 @@ def fob_reference(p: KeyParams):
         .translate((p.fob_center_x, 0, p.wall))
     fob = body
     for i, (bx, by) in enumerate(p.button_positions):
-        angle = button_angle(p, i, bx, by)
+        angle = button_angle(p, i, bx, by) + 90
         btn = (
             rrect_solid(p.button_slot_l - 1.5, p.button_slot_w - 1.5,
                        p.fob_button_height, max(p.button_slot_r - 0.3, 0.3))

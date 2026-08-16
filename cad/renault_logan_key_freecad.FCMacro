@@ -609,6 +609,10 @@ def build():
 
     get_or_create_shape(doc, "BottomShell", params_obj, "bottom_shell")
     get_or_create_shape(doc, "TopShell", params_obj, "print_ready_top")
+    # IndicatorWindowInsert is here for live preview/tuning only -- for the
+    # actual print file (ONE two-colour object, orange body + clear window)
+    # run cad/renault_logan_key.py, which packages both bodies into a single
+    # export/top_shell_2color.3mf.
     get_or_create_shape(doc, "IndicatorWindowInsert", params_obj, "print_ready_indicator_window_insert")
     get_or_create_shape(doc, "KeyAssembled", params_obj, "assembled")
     get_or_create_shape(doc, "RefBlade", params_obj, "blade_reference")

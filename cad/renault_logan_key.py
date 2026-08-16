@@ -22,10 +22,13 @@
 #      the fob's buttons so they can be pressed with the lid closed. A small
 #      round WINDOW over the fob's blink indicator (lights on any button
 #      press) is split from the top half at EXACTLY the window boundary (zero
-#      clearance) into a second body — see indicator_window_insert() below —
-#      so a multi-material printer (Bambu AMS, Anycubic ACE, ...) prints the
-#      whole top half as ONE seamless part with a transparent window, no
-#      gluing or press-fitting needed.
+#      clearance) into a second body — see indicator_window_insert() below.
+#      export/top_shell_2color.3mf packages BOTH bodies as ONE multi-material
+#      object (two coloured components under a single build item) — the top
+#      half is ONE printable object in the slicer, no separate part to align,
+#      no gluing: assign a filament to each component (e.g. orange body /
+#      clear window) and a multi-material printer (Bambu AMS, Anycubic ACE,
+#      ...) prints it as one job.
 #
 #   3. The PCF7936 ("ID46") immobilizer transponder sits in a small nest in the
 #      solid front, next to the blade.
@@ -142,12 +145,11 @@ class KeyParams:
     # side open/close buttons (button_positions[1]/[2]), centred between them
     # -- fob-local X further back, Y centred. top_shell() is split into TWO
     # bodies at EXACTLY this cylinder (zero clearance, see indicator_window()
-    # / indicator_window_insert()) -- not a press-fit plug. Load both STLs on
-    # the same plate at their exported position and assign each its own
-    # filament in a multi-material printer (Bambu AMS, Anycubic ACE, ...): it
-    # prints as ONE physical part with a built-in transparent window, no
-    # assembly step. MEASURE against your board; the indicator moves with
-    # board revisions. --------------------------------------------------
+    # / indicator_window_insert()) and packaged as ONE multi-material object
+    # in export/top_shell_2color.3mf -- a single printable object with two
+    # colour components (e.g. orange body / clear window), no separate part,
+    # no assembly. MEASURE against your board; the indicator moves with board
+    # revisions. -----------------------------------------------------------
     indicator_dia: float = 6.0    # window diameter, about the size of a button
     indicator_x: float = 12.0     # fob-local X, further back than the side buttons
     indicator_y: float = 0.0      # fob-local Y, centred between them
@@ -533,9 +535,8 @@ def indicator_window_insert(p: KeyParams):
 
 def print_ready_indicator_window_insert(p: KeyParams):
     """Same flip/translate as print_ready_top, so this lines up with the
-    printed top half when both sit on the same slicer plate at their native
-    (exported) position -- assign each its own filament/colour and print as
-    one job (Bambu AMS, Anycubic ACE, ...)."""
+    printed top half -- used to build the "clear" component of
+    export/top_shell_2color.3mf, not exported as a standalone file."""
     h = p.head_height - p.split_z
     return indicator_window_insert(p).rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, h))
 
@@ -543,6 +544,82 @@ def print_ready_indicator_window_insert(p: KeyParams):
 def assembled(p: KeyParams):
     top = top_shell(p).union(indicator_window_insert(p))
     return bottom_shell(p).union(top.translate((0, 0, p.split_z)))
+
+
+def export_multicolor_3mf(parts, path, tolerance=0.05, angular_tolerance=0.3):
+    """Write `parts` (a list of (solid, name, "#RRGGBBAA") tuples) as a SINGLE
+    3MF object made of one coloured component per part -- one build item, one
+    entry in the slicer's object list, each component independently
+    assignable to a filament/extruder. This is the standard 3MF mechanism
+    slicers (Bambu Studio, OrcaSlicer/Anycubic, PrusaSlicer, ...) use for a
+    single multi-material part, so it prints as ONE physical object with no
+    manual alignment of separate STLs. Hand-built (zip + core-spec XML) since
+    cadquery/OCC has no multi-object 3MF writer."""
+    import zipfile
+
+    mesh_objects = []          # (object_id, name, vertices, triangles, material_index)
+    next_id = 2                # id 1 is the <basematerials> resource
+    for solid, name, _rgba in parts:
+        verts, tris = solid.val().tessellate(tolerance, angular_tolerance)
+        mesh_objects.append((next_id, name, verts, tris, len(mesh_objects)))
+        next_id += 1
+    combo_id = next_id
+
+    xml = ['<?xml version="1.0" encoding="UTF-8"?>',
+          '<model unit="millimeter" xml:lang="en-US" '
+          'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">',
+          '  <resources>',
+          '    <basematerials id="1">']
+    for _solid, name, rgba in parts:
+        xml.append('      <base name="%s" displaycolor="%s"/>' % (name, rgba))
+    xml.append('    </basematerials>')
+
+    for obj_id, name, verts, tris, mat_idx in mesh_objects:
+        xml.append('    <object id="%d" name="%s" type="model" pid="1" pindex="%d">'
+                   % (obj_id, name, mat_idx))
+        xml.append('      <mesh>')
+        xml.append('        <vertices>')
+        for v in verts:
+            xml.append('          <vertex x="%.4f" y="%.4f" z="%.4f"/>' % (v.x, v.y, v.z))
+        xml.append('        </vertices>')
+        xml.append('        <triangles>')
+        for t in tris:
+            xml.append('          <triangle v1="%d" v2="%d" v3="%d"/>' % (t[0], t[1], t[2]))
+        xml.append('        </triangles>')
+        xml.append('      </mesh>')
+        xml.append('    </object>')
+
+    xml.append('    <object id="%d" name="TopShell" type="model">' % combo_id)
+    xml.append('      <components>')
+    for obj_id, _name, _v, _t, _m in mesh_objects:
+        xml.append('        <component objectid="%d"/>' % obj_id)
+    xml.append('      </components>')
+    xml.append('    </object>')
+    xml.append('  </resources>')
+    xml.append('  <build>')
+    xml.append('    <item objectid="%d"/>' % combo_id)
+    xml.append('  </build>')
+    xml.append('</model>')
+
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>'
+        '</Types>'
+    )
+    rels = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Target="/3D/3dmodel.model" Id="rel0" '
+        'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>'
+        '</Relationships>'
+    )
+
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("_rels/.rels", rels)
+        zf.writestr("3D/3dmodel.model", "\n".join(xml))
 
 
 def main():
@@ -554,7 +631,6 @@ def main():
         "bottom_shell": bottom_shell(p),
         "top_shell": print_ready_top(p),
         "key_assembled": assembled(p),
-        "indicator_window_insert": print_ready_indicator_window_insert(p),
     }
     for name, solid in parts.items():
         cq.exporters.export(solid, os.path.join(outdir, name + ".stl"),
@@ -563,6 +639,17 @@ def main():
         if do_step:
             cq.exporters.export(solid, os.path.join(outdir, name + ".step"))
             print("wrote", name + ".step")
+
+    # top_shell as ONE two-colour object: orange body + clear indicator window,
+    # both baked into a single 3MF build item (see export_multicolor_3mf).
+    export_multicolor_3mf(
+        [
+            (print_ready_top(p), "Orange body", "#FF7A00FF"),
+            (print_ready_indicator_window_insert(p), "Clear window", "#EAF6FF4D"),
+        ],
+        os.path.join(outdir, "top_shell_2color.3mf"),
+    )
+    print("wrote top_shell_2color.3mf")
     print("done.")
 
 

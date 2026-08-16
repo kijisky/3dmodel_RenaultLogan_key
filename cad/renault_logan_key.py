@@ -403,8 +403,9 @@ def top_shell(p: KeyParams):
     h = p.head_height - p.split_z
     t = rrect_solid(p.head_length, p.head_width, h, p.corner_radius).translate((cx, 0, 0))
 
-    # fob region hollow, leaving a `wall` ceiling (open at the parting face z=0)
-    t = t.cut(fob_cavity(p, -EPS, h - p.wall + EPS))
+    # No cavity cut here: an early print with the fob pocket open on BOTH
+    # halves let the fob rattle (too much total depth). Leaving the top solid
+    # over the fob region relies on the bottom pocket alone to hold it snug.
 
     # groove matching the bottom lip
     groove = lip_ring(p, p.lip_height + p.clearance, grow=p.clearance).translate((cx, 0, 0))

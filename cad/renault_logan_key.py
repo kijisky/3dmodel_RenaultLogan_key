@@ -23,12 +23,15 @@
 #      round WINDOW over the fob's blink indicator (lights on any button
 #      press) is split from the top half at EXACTLY the window boundary (zero
 #      clearance) into a second body — see indicator_window_insert() below.
-#      export/top_shell_2color.3mf packages BOTH bodies as ONE multi-material
-#      object (two coloured components under a single build item) — the top
-#      half is ONE printable object in the slicer, no separate part to align,
-#      no gluing: assign a filament to each component (e.g. orange body /
-#      clear window) and a multi-material printer (Bambu AMS, Anycubic ACE,
-#      ...) prints it as one job.
+#      Only a THIN LENS of that second body is solid, flush with the outer
+#      face; the rest of the hole is left hollow up to the parting plane, so
+#      the blink actually shows through instead of being buried under the
+#      full ceiling thickness. export/top_shell_2color.3mf packages BOTH
+#      bodies as ONE multi-material object (two coloured components under a
+#      single build item) — the top half is ONE printable object in the
+#      slicer, no separate part to align, no gluing: assign a filament to
+#      each component (e.g. orange body / clear window) and a multi-material
+#      printer (Bambu AMS, Anycubic ACE, ...) prints it as one job.
 #
 #   3. The PCF7936 ("ID46") immobilizer transponder sits in a small nest in the
 #      solid front, next to the blade.
@@ -153,6 +156,12 @@ class KeyParams:
     indicator_dia: float = 6.0    # window diameter, about the size of a button
     indicator_x: float = 12.0     # fob-local X, further back than the side buttons
     indicator_y: float = 0.0      # fob-local Y, centred between them
+    # The clear insert is only THIS thick, flush with the outer face -- the
+    # rest of the hole (down to the parting plane) is left open/hollow, so
+    # the LED's blink has to shine through a thin lens instead of the full
+    # ceiling thickness. Thinner = brighter blink but more fragile/more light
+    # bleed; tune against your filament's actual translucency.
+    indicator_lens_thickness: float = 0.6
 
     # --- Immobilizer transponder PCF7936 ("ID46") carrier, by the blade.
     # Fully-walled nest beside the blade, molded ENTIRELY into the bottom half.
@@ -294,10 +303,12 @@ def fob_cavity(p: KeyParams, z0, height):
 
 
 def indicator_window(p: KeyParams):
-    """Boundary that splits the top ceiling into two bodies for multi-material
-    printing: top_shell() is cut with this, indicator_window_insert() is
-    exactly this cylinder -- ZERO clearance, so the two share a seamless
-    boundary (no gap to press-fit or glue, just a filament change)."""
+    """Full-depth hole cut out of the top ceiling; indicator_window_insert()
+    fills only its bottom (outer-face) slice with a thin coloured lens --
+    ZERO clearance against this same diameter, so no gap to press-fit or
+    glue where the two meet, just a filament change. Above the lens the hole
+    stays open/hollow all the way to the parting plane (see
+    indicator_window_insert)."""
     h = p.head_height - p.split_z
     return cyl(p.indicator_dia,
               p.fob_center_x + p.indicator_x, p.indicator_y, -EPS, h + 2 * EPS)
@@ -525,12 +536,16 @@ def print_ready_top(p: KeyParams):
 
 
 def indicator_window_insert(p: KeyParams):
-    """The small body cut out of top_shell() by indicator_window() -- EXACTLY
-    that cylinder (same diameter, no clearance), so it's a seamless fill, not
-    a separate part to press in. Print it in a different filament/colour on a
-    multi-material printer and the two bodies come out as one physical piece."""
+    """A thin lens (indicator_lens_thickness) flush with the OUTER face,
+    filling only the bottom of the hole indicator_window() cuts out of
+    top_shell() -- same diameter, zero clearance, so it's a seamless fill
+    there, not a separate part to press in. The REST of that hole (from the
+    lens up to the parting plane) is deliberately left open/hollow: less
+    solid plastic between the LED and the outside means its blink actually
+    shows through, instead of being smothered by the full ceiling thickness."""
     h = p.head_height - p.split_z
-    return cyl(p.indicator_dia, p.fob_center_x + p.indicator_x, p.indicator_y, 0, h)
+    t = p.indicator_lens_thickness
+    return cyl(p.indicator_dia, p.fob_center_x + p.indicator_x, p.indicator_y, h - t, t)
 
 
 def print_ready_indicator_window_insert(p: KeyParams):

@@ -136,10 +136,12 @@ def fob_cavity(p, z0, height):
 
 
 def indicator_window(p):
-    """Boundary that splits the top ceiling into two bodies for multi-material
-    printing: top_shell() is cut with this, indicator_window_insert() is
-    exactly this cylinder -- ZERO clearance, so the two share a seamless
-    boundary (no gap to press-fit or glue, just a filament change)."""
+    """Full-depth hole cut out of the top ceiling; indicator_window_insert()
+    fills only its bottom (outer-face) slice with a thin coloured lens --
+    ZERO clearance against this same diameter, so no gap to press-fit or
+    glue where the two meet, just a filament change. Above the lens the hole
+    stays open/hollow all the way to the parting plane (see
+    indicator_window_insert)."""
     h = p.head_height - p.split_z
     return cyl(p.indicator_dia,
               p.fob_center_x + p.indicator_x, p.indicator_y, -EPS, h + 2 * EPS)
@@ -301,12 +303,16 @@ def print_ready_top(p):
 
 
 def indicator_window_insert(p):
-    """The small body cut out of top_shell() by indicator_window() -- EXACTLY
-    that cylinder (same diameter, no clearance), so it's a seamless fill, not
-    a separate part to press in. Print it in a different filament/colour on a
-    multi-material printer and the two bodies come out as one physical piece."""
+    """A thin lens (indicator_lens_thickness) flush with the OUTER face,
+    filling only the bottom of the hole indicator_window() cuts out of
+    top_shell() -- same diameter, zero clearance, so it's a seamless fill
+    there, not a separate part to press in. The REST of that hole (from the
+    lens up to the parting plane) is deliberately left open/hollow: less
+    solid plastic between the LED and the outside means its blink actually
+    shows through, instead of being smothered by the full ceiling thickness."""
     h = p.head_height - p.split_z
-    return cyl(p.indicator_dia, p.fob_center_x + p.indicator_x, p.indicator_y, 0, h)
+    t = p.indicator_lens_thickness
+    return cyl(p.indicator_dia, p.fob_center_x + p.indicator_x, p.indicator_y, h - t, t)
 
 
 def print_ready_indicator_window_insert(p):
@@ -472,6 +478,7 @@ _DEFAULTS = {
     "indicator_dia": ("App::PropertyLength", "Indicator", "Blink-indicator window diameter, about the size of a button", 6.0),
     "indicator_x": ("App::PropertyLength", "Indicator", "Fob-local X, further back than the side buttons", 12.0),
     "indicator_y": ("App::PropertyLength", "Indicator", "Fob-local Y, centred between the side buttons", 0.0),
+    "indicator_lens_thickness": ("App::PropertyLength", "Indicator", "Clear lens thickness, flush with the outer face; rest of the hole stays open so the LED shows through", 0.6),
 
     "chip_length": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier length", 12.0),
     "chip_width": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier width", 6.0),

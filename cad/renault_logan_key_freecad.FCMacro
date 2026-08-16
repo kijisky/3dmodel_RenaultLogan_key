@@ -434,7 +434,7 @@ _DEFAULTS = {
 
     "chip_length": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier length", 12.0),
     "chip_width": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier width", 6.0),
-    "chip_thickness": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier thickness", 1.5),
+    "chip_thickness": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier thickness", 3.0),
     "chip_center_x": ("App::PropertyLength", "Immobilizer", "Nest centre X, from the front face", 9.5),
     "chip_center_y": ("App::PropertyLength", "Immobilizer", "Nest centre Y, offset from the blade slot", 9.5),
     "chip_across": ("App::PropertyBool", "Immobilizer", "Long axis across the key (Y) instead of along it (X)", False),

@@ -141,7 +141,7 @@ class KeyParams:
     # (below) adds a second, belt-and-suspenders layer once the lid is on. ----
     chip_length: float = 12.0
     chip_width: float = 6.0
-    chip_thickness: float = 1.5
+    chip_thickness: float = 3.0
     chip_center_x: float = 9.5    # positioned to leave a real wall front & back
     chip_center_y: float = 9.5    # offset to the side of the blade slot
     chip_across: bool = False     # False -> long axis along X (along the key)

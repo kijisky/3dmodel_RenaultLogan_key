@@ -5,9 +5,10 @@
 # Unlike a plain "build once and export" macro, this creates real FreeCAD
 # *scripted parametric objects* (Part::FeaturePython): a single "KeyParameters"
 # object holds every dimension as an ordinary FreeCAD Property (grouped in the
-# Property panel — Head / Blade / Fob / Buttons / Immobilizer / Keyring /
-# Assembly Screws / Fit), and three shape objects (BottomShell, TopShell,
-# KeyAssembled) that read from it and rebuild their Shape on recompute.
+# Property panel — Head / Blade / Fob / Buttons / Indicator / Immobilizer /
+# Keyring / Assembly Screws / Fit), and shape objects (BottomShell, TopShell,
+# IndicatorWindowInsert, KeyAssembled, ...) that read from it and rebuild their Shape
+# on recompute.
 #
 # WORKFLOW (all inside FreeCAD, no code editing):
 #   1. Run this macro once (Macro -> Macros... -> Execute, or freecadcmd).
@@ -16,7 +17,8 @@
 #      button_x/button_y, ...).
 #   4. Recompute (the round-arrows toolbar button, or F5, or it may happen
 #      automatically depending on your "recompute on change" preference).
-#      BottomShell / TopShell / KeyAssembled all rebuild from the new values.
+#      BottomShell / TopShell / IndicatorWindowInsert / KeyAssembled all rebuild from
+#      the new values.
 #   5. Export whichever shape you want via File -> Export (STL for printing,
 #      STEP for other CAD).
 #
@@ -131,6 +133,16 @@ def fob_cavity(p, z0, height):
                     height, p.fob_corner_r + p.fob_clearance)
     s.translate(App.Vector(p.fob_center_x, 0, z0))
     return s
+
+
+def indicator_window(p):
+    """Boundary that splits the top ceiling into two bodies for multi-material
+    printing: top_shell() is cut with this, indicator_window_insert() is
+    exactly this cylinder -- ZERO clearance, so the two share a seamless
+    boundary (no gap to press-fit or glue, just a filament change)."""
+    h = p.head_height - p.split_z
+    return cyl(p.indicator_dia,
+              p.fob_center_x + p.indicator_x, p.indicator_y, -EPS, h + 2 * EPS)
 
 
 def blade_channel(p):
@@ -250,6 +262,10 @@ def top_shell(p):
     # halves let the fob rattle (too much total depth). Leaving the top solid
     # over the fob region relies on the bottom pocket alone to hold it snug.
 
+    # round window over the blink indicator, split off as a second body for
+    # multi-material printing -- see indicator_window_insert() below
+    t = t.cut(indicator_window(p))
+
     groove = lip_ring(p, p.lip_height + p.clearance, grow=p.clearance)
     groove.translate(App.Vector(cx, 0, 0))
     t = t.cut(groove)
@@ -284,9 +300,30 @@ def print_ready_top(p):
     return t
 
 
+def indicator_window_insert(p):
+    """The small body cut out of top_shell() by indicator_window() -- EXACTLY
+    that cylinder (same diameter, no clearance), so it's a seamless fill, not
+    a separate part to press in. Print it in a different filament/colour on a
+    multi-material printer and the two bodies come out as one physical piece."""
+    h = p.head_height - p.split_z
+    return cyl(p.indicator_dia, p.fob_center_x + p.indicator_x, p.indicator_y, 0, h)
+
+
+def print_ready_indicator_window_insert(p):
+    """Same flip/translate as print_ready_top, so this lines up with the
+    printed top half when both sit on the same slicer plate -- assign each
+    its own filament/colour and print as one job (Bambu AMS, Anycubic ACE,
+    ...)."""
+    h = p.head_height - p.split_z
+    insert = indicator_window_insert(p)
+    insert.rotate(App.Vector(0, 0, 0), App.Vector(1, 0, 0), 180)
+    insert.translate(App.Vector(0, 0, h))
+    return insert
+
+
 def assembled(p):
     b = bottom_shell(p)
-    t = top_shell(p)
+    t = top_shell(p).fuse(indicator_window_insert(p))
     t.translate(App.Vector(0, 0, p.split_z))
     return b.fuse(t)
 
@@ -432,6 +469,10 @@ _DEFAULTS = {
     "button_slot_r": ("App::PropertyLength", "Buttons", "Opening corner radius", 1.2),
     "button_radial": ("App::PropertyBool", "Buttons", "Auto-rotate each opening radially from the fob centre", True),
 
+    "indicator_dia": ("App::PropertyLength", "Indicator", "Blink-indicator window diameter, about the size of a button", 6.0),
+    "indicator_x": ("App::PropertyLength", "Indicator", "Fob-local X, further back than the side buttons", 12.0),
+    "indicator_y": ("App::PropertyLength", "Indicator", "Fob-local Y, centred between the side buttons", 0.0),
+
     "chip_length": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier length", 12.0),
     "chip_width": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier width", 6.0),
     "chip_thickness": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier thickness", 1.5),
@@ -568,6 +609,11 @@ def build():
 
     get_or_create_shape(doc, "BottomShell", params_obj, "bottom_shell")
     get_or_create_shape(doc, "TopShell", params_obj, "print_ready_top")
+    # IndicatorWindowInsert is here for live preview/tuning only -- for the
+    # actual print file (ONE two-colour object, orange body + clear window)
+    # run cad/renault_logan_key.py, which packages both bodies into a single
+    # export/top_shell_2color.3mf.
+    get_or_create_shape(doc, "IndicatorWindowInsert", params_obj, "print_ready_indicator_window_insert")
     get_or_create_shape(doc, "KeyAssembled", params_obj, "assembled")
     get_or_create_shape(doc, "RefBlade", params_obj, "blade_reference")
     get_or_create_shape(doc, "RefChip", params_obj, "chip_reference")
@@ -585,7 +631,7 @@ def build():
 
     App.Console.PrintMessage(
         "Ready. Select 'KeyParameters' in the tree, edit its Properties, "
-        "then Recompute (F5) to update BottomShell/TopShell/KeyAssembled.\n"
+        "then Recompute (F5) to update BottomShell/TopShell/IndicatorWindowInsert/KeyAssembled.\n"
     )
     return doc
 

@@ -115,7 +115,7 @@ def button_angle(p, index, bx, by):
 
 
 def button_slot_solid(p, bx, by, index, height, z0):
-    angle = button_angle(p, index, bx, by)
+    angle = button_angle(p, index, bx, by) + 90
     slot = rrect_solid(p.button_slot_l, p.button_slot_w, height, p.button_slot_r)
     slot.rotate(App.Vector(0, 0, 0), App.Vector(0, 0, 1), angle)
     slot.translate(App.Vector(p.fob_center_x + bx, by, z0))
@@ -316,7 +316,7 @@ def fob_reference(p):
     body.translate(App.Vector(p.fob_center_x, 0, p.wall))
     fob = body
     for i, (bx, by) in enumerate(p.button_positions):
-        angle = button_angle(p, i, bx, by)
+        angle = button_angle(p, i, bx, by) + 90
         btn = rrect_solid(p.button_slot_l - 1.5, p.button_slot_w - 1.5,
                           p.fob_button_height, max(p.button_slot_r - 0.3, 0.3))
         btn.rotate(App.Vector(0, 0, 0), App.Vector(0, 0, 1), angle)
@@ -423,7 +423,7 @@ _DEFAULTS = {
     "fob_retain": ("App::PropertyBool", "Fob", "Add fob retainer ribs (one per long/Y wall)", True),
     "fob_retainer_thickness": ("App::PropertyLength", "Fob", "Rib length along the wall", 1.0),
     "fob_retainer_dx": ("App::PropertyLength", "Fob", "Rib X offset from fob centre (+ = toward the back)", 3.0),
-    "fob_retainer_grip": ("App::PropertyLength", "Fob", "Retainer interference past the fob edge", 0.2),
+    "fob_retainer_grip": ("App::PropertyLength", "Fob", "Retainer interference past the fob edge", 0.6),
 
     "button_slot_l": ("App::PropertyLength", "Buttons", "Opening size along its own long axis", 7.0),
     "button_slot_w": ("App::PropertyLength", "Buttons", "Opening size along its own short axis", 5.0),
@@ -432,7 +432,7 @@ _DEFAULTS = {
 
     "chip_length": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier length", 12.0),
     "chip_width": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier width", 6.0),
-    "chip_thickness": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier thickness", 2.5),
+    "chip_thickness": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier thickness", 1.5),
     "chip_center_x": ("App::PropertyLength", "Immobilizer", "Nest centre X, from the front face", 9.5),
     "chip_center_y": ("App::PropertyLength", "Immobilizer", "Nest centre Y, offset from the blade slot", 9.5),
     "chip_across": ("App::PropertyBool", "Immobilizer", "Long axis across the key (Y) instead of along it (X)", False),
@@ -446,7 +446,7 @@ _DEFAULTS = {
     "keyring_y": ("App::PropertyLength", "Keyring", "Hole centre Y, off-centre toward one edge", 8.0),
 
     "asm_pilot_dia": ("App::PropertyLength", "Assembly Screws", "Bottom self-tap pilot hole", 2.0),
-    "asm_clear_dia": ("App::PropertyLength", "Assembly Screws", "Top shank clearance hole", 2.7),
+    "asm_clear_dia": ("App::PropertyLength", "Assembly Screws", "Top shank clearance hole", 1.0),
     "asm_head_dia": ("App::PropertyLength", "Assembly Screws", "Top counterbore diameter", 5.0),
     "asm_head_depth": ("App::PropertyLength", "Assembly Screws", "Top counterbore depth", 2.0),
 
@@ -458,8 +458,8 @@ _DEFAULTS = {
 # FloatList properties (variable-length lists: buttons, assembly screws).
 # (name, group, tooltip, default list)
 _DEFAULT_LISTS = {
-    "button_x": ("Buttons", "Button X offsets, FOB-LOCAL mm (one per button)", [-6.0, 7.0, 7.0]),
-    "button_y": ("Buttons", "Button Y offsets, FOB-LOCAL mm (one per button)", [0.0, 7.0, -7.0]),
+    "button_x": ("Buttons", "Button X offsets, FOB-LOCAL mm (one per button)", [-6.0, 6.0, 6.0]),
+    "button_y": ("Buttons", "Button Y offsets, FOB-LOCAL mm (one per button)", [0.1, 6.0, -6.0]),
     "button_angle_overrides": ("Buttons", "Explicit angles in degrees, used only if button_radial=False", [0.0, 0.0, 0.0]),
     "asm_x": ("Assembly Screws", "Screw X positions, from the front face", [51.0, 51.0]),
     "asm_y": ("Assembly Screws", "Screw Y positions", [13.0, -13.0]),

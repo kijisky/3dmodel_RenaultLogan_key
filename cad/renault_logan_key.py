@@ -19,7 +19,9 @@
 #   2. The alarm-remote fob (a round PCB ~31.5 x 28 mm, ~7 mm thick, with 3
 #      buttons on one face) drops into a rounded CAVITY that fills the middle
 #      and rear of the head. Three BUTTON HOLES through the TOP half sit over
-#      the fob's buttons so they can be pressed with the lid closed.
+#      the fob's buttons so they can be pressed with the lid closed, each
+#      ringed by a shallow FINGER DISH in the outer face so a fingertip
+#      settles onto the button instead of poking a flat slot edge.
 #
 #   3. The PCF7936 ("ID46") immobilizer transponder sits in a small nest in the
 #      solid front, next to the blade.
@@ -131,6 +133,15 @@ class KeyParams:
     button_radial: bool = True
     button_angles: tuple = (0.0, 0.0, 0.0)   # used only if button_radial=False
 
+    # Shallow finger dish cut into the OUTER face around each opening, so a
+    # fingertip settles onto the button instead of poking a flat slot edge --
+    # a plain hole through a hard shell is uncomfortable to press. Sphere-cap
+    # cut, sized independently of the slot: button_dimple_dia is the dish's
+    # rim diameter, button_dimple_depth how deep it is at the centre.
+    button_dimple: bool = True
+    button_dimple_dia: float = 10.0
+    button_dimple_depth: float = 1.2
+
     # --- Immobilizer transponder PCF7936 ("ID46") carrier, by the blade.
     # Fully-walled nest beside the blade, molded ENTIRELY into the bottom half.
     # Near the top of the nest (just below the parting plane) the opening
@@ -231,6 +242,11 @@ def cyl(dia, x, y, z0, height):
     return cq.Workplane("XY").circle(dia / 2).extrude(height).translate((x, y, z0))
 
 
+def ball(radius, x, y, z):
+    """Sphere centred at (x, y, z) -- used to cut a shallow finger dish."""
+    return cq.Workplane("XY").sphere(radius).translate((x, y, z))
+
+
 def button_angle(p: "KeyParams", index, bx, by):
     """Rotation (degrees) for the button opening at FOB-LOCAL offset (bx, by).
     Radial mode points the opening's long axis away from the fob centre —
@@ -247,6 +263,19 @@ def button_slot_solid(p: "KeyParams", bx, by, index, height, z0):
     slot = rrect_solid(p.button_slot_l, p.button_slot_w, height, p.button_slot_r)
     slot = slot.rotate((0, 0, 0), (0, 0, 1), angle)
     return slot.translate((p.fob_center_x + bx, by, z0))
+
+
+def button_dimple_cut(p: "KeyParams", bx, by):
+    """Shallow spherical-cap dish in the top's OUTER face around a button
+    opening. Sagitta geometry: a sphere of radius R positioned so its cap,
+    sliced by the outer face (z=h), has the requested rim radius r and centre
+    depth d -- R = (r^2 + d^2) / (2d), sphere centred d above that face minus
+    its own radius (i.e. R - d above z=h)."""
+    h = p.head_height - p.split_z
+    r = p.button_dimple_dia / 2
+    d = p.button_dimple_depth
+    R = (r * r + d * d) / (2 * d)
+    return ball(R, p.fob_center_x + bx, by, h + R - d)
 
 
 def box_at(dx, dy, dz, x, y, z0, cx=True, cy=True):
@@ -415,10 +444,13 @@ def top_shell(p: KeyParams):
     t = t.cut(cyl(p.keyring_hole_dia, p.keyring_x, p.keyring_y, -EPS, h + 2 * EPS))
 
     # rectangular button openings through the ceiling (the caps drop into
-    # them), each rotated per button_angle -- not axis-aligned
+    # them), each rotated per button_angle -- not axis-aligned. A shallow
+    # finger dish around each opening makes it comfortable to press.
     for i, (bx, by) in enumerate(p.button_positions):
         slot = button_slot_solid(p, bx, by, i, h + 2 * EPS, -EPS)
         t = t.cut(slot)
+        if p.button_dimple:
+            t = t.cut(button_dimple_cut(p, bx, by))
 
     # hold-down pad that traps the chip against its nest when the lid closes
     if p.chip_holddown:

@@ -139,6 +139,18 @@ def button_dimple_cut(p, bx, by):
     return ball(R, p.fob_center_x + bx, by, h + R - d)
 
 
+def indicator_dimple_cut(p):
+    """Shallow spherical-cap dish in the top's OUTER face over the fob's
+    blink indicator, between the two side buttons. Same sagitta technique as
+    button_dimple_cut(), just deeper and with no hole underneath -- the dish
+    alone has to thin the ceiling enough for the LED's blink to show through."""
+    h = p.head_height - p.split_z
+    r = p.indicator_dimple_dia / 2
+    d = p.indicator_dimple_depth
+    R = (r * r + d * d) / (2 * d)
+    return ball(R, p.fob_center_x + p.indicator_x, p.indicator_y, h + R - d)
+
+
 # ============================================================================
 # Feature cutters (global coordinates)
 # ============================================================================
@@ -278,6 +290,9 @@ def top_shell(p):
         t = t.cut(slot)
         if p.button_dimple:
             t = t.cut(button_dimple_cut(p, bx, by))
+
+    if p.indicator_dimple:
+        t = t.cut(indicator_dimple_cut(p))
 
     if p.chip_holddown:
         pad = chip_holddown_pad(p)
@@ -452,7 +467,13 @@ _DEFAULTS = {
     "button_radial": ("App::PropertyBool", "Buttons", "Auto-rotate each opening radially from the fob centre", True),
     "button_dimple": ("App::PropertyBool", "Buttons", "Cut a shallow finger dish in the outer face around each opening", True),
     "button_dimple_dia": ("App::PropertyLength", "Buttons", "Finger dish rim diameter", 10.0),
-    "button_dimple_depth": ("App::PropertyLength", "Buttons", "Finger dish depth at centre", 1.2),
+    "button_dimple_depth": ("App::PropertyLength", "Buttons", "Finger dish depth at centre", 2.0),
+
+    "indicator_dimple": ("App::PropertyBool", "Buttons", "Cut a deep dish (no hole) over the fob's blink LED", True),
+    "indicator_dimple_dia": ("App::PropertyLength", "Buttons", "Indicator dish rim diameter", 8.0),
+    "indicator_dimple_depth": ("App::PropertyLength", "Buttons", "Indicator dish depth at centre", 3.2),
+    "indicator_x": ("App::PropertyLength", "Buttons", "Indicator X, FOB-LOCAL mm, further back than the side buttons", 12.0),
+    "indicator_y": ("App::PropertyLength", "Buttons", "Indicator Y, FOB-LOCAL mm, centred between the side buttons", 0.0),
 
     "chip_length": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier length", 12.0),
     "chip_width": ("App::PropertyLength", "Immobilizer", "PCF7936 carrier width", 6.0),

@@ -21,7 +21,10 @@
 #      and rear of the head. Three BUTTON HOLES through the TOP half sit over
 #      the fob's buttons so they can be pressed with the lid closed, each
 #      ringed by a shallow FINGER DISH in the outer face so a fingertip
-#      settles onto the button instead of poking a flat slot edge.
+#      settles onto the button instead of poking a flat slot edge. Between
+#      the two side (open/close) buttons, the ceiling also gets an INDICATOR
+#      DISH -- no hole, just thinned way down -- so the fob's blink LED
+#      underneath actually shows through the closed lid.
 #
 #   3. The PCF7936 ("ID46") immobilizer transponder sits in a small nest in the
 #      solid front, next to the blade.
@@ -140,7 +143,25 @@ class KeyParams:
     # rim diameter, button_dimple_depth how deep it is at the centre.
     button_dimple: bool = True
     button_dimple_dia: float = 10.0
-    button_dimple_depth: float = 1.2
+    button_dimple_depth: float = 2.0   # deepened for a more pronounced press-relief (was 1.2)
+
+    # --- Status-LED window: the fob's blink indicator (lights on any button
+    # press) sits between the two side (open/close) buttons -- fob-local X
+    # further back than them, Y centred (see the claude/fob-indicator-window
+    # branch, where this position was measured against the actual board).
+    # Unlike a button it isn't pressed, so instead of a through-hole it gets
+    # the SAME shallow spherical-cap dish as button_dimple_cut(), just cut
+    # much deeper: indicator_dimple_depth is picked so the remaining ceiling
+    # at its centre is about a third of what's left over a button's dish
+    # ((head_height - split_z - button_dimple_depth) / 3 at the pre-deepening
+    # 1.2 mm button figure) -- thin enough that the LED's blink actually
+    # shows through the closed lid instead of being buried under full
+    # ceiling thickness.
+    indicator_dimple: bool = True
+    indicator_dimple_dia: float = 8.0
+    indicator_dimple_depth: float = 3.2
+    indicator_x: float = 12.0    # fob-local X, further back than the side buttons
+    indicator_y: float = 0.0     # fob-local Y, centred between them
 
     # --- Immobilizer transponder PCF7936 ("ID46") carrier, by the blade.
     # Fully-walled nest beside the blade, molded ENTIRELY into the bottom half.
@@ -276,6 +297,18 @@ def button_dimple_cut(p: "KeyParams", bx, by):
     d = p.button_dimple_depth
     R = (r * r + d * d) / (2 * d)
     return ball(R, p.fob_center_x + bx, by, h + R - d)
+
+
+def indicator_dimple_cut(p: "KeyParams"):
+    """Shallow spherical-cap dish in the top's OUTER face over the fob's
+    blink indicator, between the two side buttons. Same sagitta technique as
+    button_dimple_cut(), just deeper and with no hole underneath -- the dish
+    alone has to thin the ceiling enough for the LED's blink to show through."""
+    h = p.head_height - p.split_z
+    r = p.indicator_dimple_dia / 2
+    d = p.indicator_dimple_depth
+    R = (r * r + d * d) / (2 * d)
+    return ball(R, p.fob_center_x + p.indicator_x, p.indicator_y, h + R - d)
 
 
 def box_at(dx, dy, dz, x, y, z0, cx=True, cy=True):
@@ -451,6 +484,11 @@ def top_shell(p: KeyParams):
         t = t.cut(slot)
         if p.button_dimple:
             t = t.cut(button_dimple_cut(p, bx, by))
+
+    # dish over the fob's blink indicator, between the two side buttons --
+    # no hole, just thinned way down so the LED shows through the closed lid
+    if p.indicator_dimple:
+        t = t.cut(indicator_dimple_cut(p))
 
     # hold-down pad that traps the chip against its nest when the lid closes
     if p.chip_holddown:

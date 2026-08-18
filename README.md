@@ -171,6 +171,7 @@ fob_button_height                            # how far the buttons stand proud
 button_positions                             # (x, y) of each button in FOB-LOCAL mm
 button_slot_l, button_slot_w                 # rectangular opening size  << CHECK THESE
 button_radial, button_angles                 # opening rotation — see below
+indicator_x, indicator_y                     # blink-LED dish centre, FOB-LOCAL mm  << CHECK THESE
 blade_width, blade_thickness, blade_insert   # the tang that enters the head
 shoulder_width, shoulder_length              # the external stop (width > blade_width)
 bolt_offset                                  # must line up with the hole in YOUR tang
@@ -187,6 +188,13 @@ matching the angled layout in the photos); set `button_radial = False` and fill
 in `button_angles` (degrees per button) if you need exact angles instead. The
 head envelope (`head_length/width/height`) is chosen to wrap the fob; if you
 change the fob size, bump these to keep ~2 mm of wall around it.
+
+`indicator_x`/`indicator_y` place the dished-down spot over the fob's blink
+LED (between the two side buttons by default) — verify against your board.
+It isn't a hole: `indicator_dimple_depth` just thins the ceiling there far
+more than a button's finger dish (`button_dimple_depth`) so the blink shows
+through; tune `indicator_dimple_depth` against your filament's actual
+translucency (thinner = brighter blink but more fragile).
 
 **Chip snap-fit tuning:** `chip_snap_overlap` (default 0.4 mm per side) is the
 interference the chip must be pressed past — increase it for a firmer retention
